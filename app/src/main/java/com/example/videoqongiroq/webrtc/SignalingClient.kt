@@ -39,7 +39,7 @@ class SignalingClient {
     var onOfferReceived: ((senderPhone: String, sdp: SessionDescription) -> Unit)? = null
     var onAnswerReceived: ((senderPhone: String, sdp: SessionDescription) -> Unit)? = null
     var onIceCandidateReceived: ((senderPhone: String, candidate: IceCandidate) -> Unit)? = null
-    var onCallAcceptedReceived: ((senderPhone: String) -> Unit)? = null
+    var onCallAcceptedReceived: ((senderPhone: String, roomId: String) -> Unit)? = null
 
     companion object {
         private const val TAG = "SignalingClient"
@@ -142,6 +142,7 @@ class SignalingClient {
             val type = json.optString("type")
             val senderPhone = json.optString("senderPhone")
             val senderName = json.optString("senderName", "Abonent")
+            val roomId = json.optString("roomId", "room_${System.currentTimeMillis()}")
 
             when (type) {
                 "user_list" -> {
@@ -170,11 +171,11 @@ class SignalingClient {
 
                 "call_request" -> {
                     val caller = User(phone = senderPhone, name = senderName, status = UserStatus.IN_CALL)
-                    _callState.value = CallState.IncomingCall(caller, isVideo = true)
+                    _callState.value = CallState.IncomingCall(callerUser = caller, isVideo = true, roomId = roomId)
                 }
 
                 "call_accept" -> {
-                    onCallAcceptedReceived?.invoke(senderPhone)
+                    onCallAcceptedReceived?.invoke(senderPhone, roomId)
                 }
 
                 "call_reject" -> {
@@ -219,26 +220,31 @@ class SignalingClient {
     }
 
     fun startCall(targetUser: User, isVideo: Boolean = true) {
-        _callState.value = CallState.OutgoingCall(targetUser, isVideo)
+        val generatedRoomId = "room_${System.currentTimeMillis()}"
+        _callState.value = CallState.OutgoingCall(targetUser = targetUser, isVideo = isVideo, roomId = generatedRoomId)
         val msg = JSONObject().apply {
             put("type", "call_request")
             put("receiverPhone", targetUser.phone)
             put("isVideo", isVideo)
+            put("roomId", generatedRoomId)
         }
         sendJson(msg)
     }
 
     fun acceptIncomingCall(callerUser: User, isVideo: Boolean = true) {
-        _callState.value = CallState.InCall(peerUser = callerUser, isVideo = isVideo)
+        val current = _callState.value
+        val currentRoomId = if (current is CallState.IncomingCall) current.roomId else "room_${System.currentTimeMillis()}"
+        _callState.value = CallState.InCall(peerUser = callerUser, isVideo = isVideo, roomId = currentRoomId, isCaller = false)
         val msg = JSONObject().apply {
             put("type", "call_accept")
             put("receiverPhone", callerUser.phone)
+            put("roomId", currentRoomId)
         }
         sendJson(msg)
     }
 
-    fun transitionToInCall(peerUser: User, isVideo: Boolean = true) {
-        _callState.value = CallState.InCall(peerUser = peerUser, isVideo = isVideo)
+    fun transitionToInCall(peerUser: User, roomId: String, isVideo: Boolean = true) {
+        _callState.value = CallState.InCall(peerUser = peerUser, isVideo = isVideo, roomId = roomId, isCaller = true)
     }
 
     fun rejectIncomingCall(callerUser: User) {
@@ -322,7 +328,7 @@ class SignalingClient {
     }
 
     fun simulateIncomingCall(callerUser: User) {
-        _callState.value = CallState.IncomingCall(callerUser, isVideo = true)
+        _callState.value = CallState.IncomingCall(callerUser, isVideo = true, roomId = "demo_room_${System.currentTimeMillis()}")
     }
 
     fun updateCallControls(isMuted: Boolean, isCameraOff: Boolean, isFrontCamera: Boolean) {

@@ -30,12 +30,14 @@ sealed class CallState {
     
     data class OutgoingCall(
         val targetUser: User,
-        val isVideo: Boolean = true
+        val isVideo: Boolean = true,
+        val roomId: String = ""
     ) : CallState()
 
     data class IncomingCall(
         val callerUser: User,
-        val isVideo: Boolean = true
+        val isVideo: Boolean = true,
+        val roomId: String = ""
     ) : CallState()
 
     data class InCall(
@@ -44,7 +46,9 @@ sealed class CallState {
         val isMuted: Boolean = false,
         val isCameraOff: Boolean = false,
         val isFrontCamera: Boolean = true,
-        val durationSeconds: Int = 0
+        val durationSeconds: Int = 0,
+        val roomId: String = "",
+        val isCaller: Boolean = false
     ) : CallState()
 
     data class CallEnded(

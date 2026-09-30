@@ -50,10 +50,10 @@ fun VideoQongiroqApp() {
     // Wire Signaling Client callbacks
     LaunchedEffect(Unit) {
         // When peer accepts our call, transition to InCall
-        signalingClient.onCallAcceptedReceived = { targetPhone ->
+        signalingClient.onCallAcceptedReceived = { targetPhone, roomId ->
             val peerUser = signalingClient.onlineUsers.value.find { it.phone == targetPhone }
                 ?: User(phone = targetPhone, name = targetPhone)
-            signalingClient.transitionToInCall(peerUser, isVideo = true)
+            signalingClient.transitionToInCall(peerUser, roomId = roomId, isVideo = true)
         }
     }
 

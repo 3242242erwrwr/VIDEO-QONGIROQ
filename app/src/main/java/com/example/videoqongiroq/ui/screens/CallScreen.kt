@@ -270,16 +270,8 @@ fun ActiveCallContent(
     val context = LocalContext.current
     var callSeconds by remember { mutableStateOf(0) }
 
-    fun cleanLast9Digits(phone: String): String {
-        val digits = phone.filter { it.isDigit() }
-        return if (digits.length >= 9) digits.takeLast(9) else digits
-    }
-
-    val roomName = remember(currentUser?.phone, callState.peerUser.phone) {
-        val p1 = cleanLast9Digits(currentUser?.phone ?: "900000000")
-        val p2 = cleanLast9Digits(callState.peerUser.phone)
-        val sorted = listOf(p1, p2).sorted()
-        "qongiroq_${sorted[0]}_${sorted[1]}"
+    val roomName = remember(callState.roomId) {
+        if (callState.roomId.isNotBlank()) callState.roomId else "room_${System.currentTimeMillis()}"
     }
 
     // Configure Audio Manager for Call Mode and Speakerphone
