@@ -19,6 +19,10 @@ app.add_middleware(
 # Store registered users: phone -> {"name": name, "status": "AVAILABLE" / "OFFLINE", "websocket": ws / None}
 registered_users: Dict[str, dict] = {}
 
+# Current latest app version configuration for In-App Auto-Update
+LATEST_VERSION_CODE = 1
+LATEST_VERSION_NAME = "1.0"
+
 async def broadcast_users():
     users_list = [
         {"phone": phone, "name": data["name"], "status": data["status"]}
@@ -40,8 +44,17 @@ async def get_status():
         "status": "online",
         "service": "Video Qongiroq Signaling Server",
         "download_apk": "https://video-qongiroq.onrender.com/download",
+        "version_check": "https://video-qongiroq.onrender.com/version",
         "active_users_count": online_count,
         "total_users_count": len(registered_users)
+    }
+
+@app.get("/version")
+async def get_version():
+    return {
+        "latestVersionCode": LATEST_VERSION_CODE,
+        "versionName": LATEST_VERSION_NAME,
+        "downloadUrl": "https://video-qongiroq.onrender.com/download"
     }
 
 @app.get("/download")
