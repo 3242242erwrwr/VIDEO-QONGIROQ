@@ -1,9 +1,13 @@
 package com.example.videoqongiroq.ui.screens
 
-import android.widget.FrameLayout
+import android.view.ViewGroup
+import android.webkit.PermissionRequest
+import android.webkit.WebChromeClient
+import android.webkit.WebResourceRequest
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -61,11 +65,7 @@ fun CallScreen(
                 ActiveCallContent(
                     currentUser = currentUser,
                     callState = callState,
-                    agoraVideoManager = agoraVideoManager,
-                    onEndCall = onEndCall,
-                    onToggleMute = onToggleMute,
-                    onToggleCamera = onToggleCamera,
-                    onSwitchCamera = onSwitchCamera
+                    onEndCall = onEndCall
                 )
             }
             is CallState.CallEnded -> {
@@ -261,97 +261,60 @@ fun OutgoingCallContent(
 fun ActiveCallContent(
     currentUser: User?,
     callState: CallState.InCall,
-    agoraVideoManager: AgoraVideoManager?,
-    onEndCall: () -> Unit,
-    onToggleMute: (Boolean) -> Unit,
-    onToggleCamera: (Boolean) -> Unit,
-    onSwitchCamera: () -> Unit
+    onEndCall: () -> Unit
 ) {
     var callSeconds by remember { mutableStateOf(0) }
-    var remoteUid by remember { mutableStateOf(agoraVideoManager?.remoteUid) }
 
-    val channelName = remember(currentUser?.phone, callState.peerUser.phone) {
+    val roomName = remember(currentUser?.phone, callState.peerUser.phone) {
         val p1 = (currentUser?.phone ?: "998000000000").filter { it.isDigit() }
         val p2 = callState.peerUser.phone.filter { it.isDigit() }
         val sorted = listOf(p1, p2).sorted()
         "qongiroq_${sorted[0]}_${sorted[1]}"
     }
 
-    LaunchedEffect(channelName) {
-        agoraVideoManager?.onRemoteUserJoined = { uid ->
-            remoteUid = uid
-        }
-        agoraVideoManager?.onRemoteUserOffline = { _ ->
-            remoteUid = null
-        }
-        agoraVideoManager?.joinChannel(channelName)
-
+    LaunchedEffect(roomName) {
         while (true) {
             delay(1000)
             callSeconds++
         }
     }
 
-    DisposableEffect(channelName) {
-        onDispose {
-            agoraVideoManager?.leaveChannel()
-        }
-    }
-
     Box(modifier = Modifier.fillMaxSize()) {
-        // Remote Video View (Full Screen)
-        val activeUid = remoteUid
-        if (agoraVideoManager != null && activeUid != null) {
-            AndroidView(
-                factory = { ctx ->
-                    FrameLayout(ctx).apply {
-                        agoraVideoManager.setupRemoteVideo(this, activeUid)
-                    }
-                },
-                update = { frameLayout ->
-                    agoraVideoManager.setupRemoteVideo(frameLayout, activeUid)
-                },
-                modifier = Modifier.fillMaxSize()
-            )
-        } else {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color.DarkGray),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = "Abonentga ulanilmoqda...",
-                    color = Color.White,
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-        }
+        // High-Speed WebRTC Global Call Engine (Meet Jitsi WebRTC Cluster)
+        AndroidView(
+            factory = { ctx ->
+                WebView(ctx).apply {
+                    layoutParams = ViewGroup.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT
+                    )
+                    settings.javaScriptEnabled = true
+                    settings.domStorageEnabled = true
+                    settings.mediaPlaybackRequiresUserGesture = false
+                    settings.allowFileAccess = true
+                    settings.allowContentAccess = true
 
-        // Local Video View (PIP Overlay - Top Right)
-        if (agoraVideoManager != null && !callState.isCameraOff) {
-            Box(
-                modifier = Modifier
-                    .padding(top = 48.dp, end = 16.dp)
-                    .size(110.dp, 160.dp)
-                    .align(Alignment.TopEnd)
-                    .clip(RoundedCornerShape(16.dp))
-                    .border(2.dp, Color.White, RoundedCornerShape(16.dp))
-            ) {
-                AndroidView(
-                    factory = { ctx ->
-                        FrameLayout(ctx).apply {
-                            agoraVideoManager.setupLocalVideo(this)
+                    webChromeClient = object : WebChromeClient() {
+                        override fun onPermissionRequest(request: PermissionRequest?) {
+                            request?.grant(request.resources)
                         }
-                    },
-                    update = { frameLayout ->
-                        agoraVideoManager.setupLocalVideo(frameLayout)
-                    },
-                    modifier = Modifier.fillMaxSize()
-                )
-            }
-        }
+                    }
+
+                    webViewClient = object : WebViewClient() {
+                        override fun shouldOverrideUrlLoading(
+                            view: WebView?,
+                            request: WebResourceRequest?
+                        ): Boolean {
+                            return false
+                        }
+                    }
+
+                    val callUrl = "https://meet.jit.si/$roomName#config.prejoinPageEnabled=false&config.startWithAudioMuted=false&config.startWithVideoMuted=false"
+                    loadUrl(callUrl)
+                }
+            },
+            modifier = Modifier.fillMaxSize()
+        )
 
         // Top Header Info
         Card(
@@ -390,84 +353,21 @@ fun ActiveCallContent(
             }
         }
 
-        // Bottom Controls Bar
-        Surface(
+        // Floating End Call Button
+        IconButton(
+            onClick = onEndCall,
             modifier = Modifier
-                .fillMaxWidth()
+                .padding(bottom = 36.dp)
+                .size(68.dp)
+                .background(Color.Red, CircleShape)
                 .align(Alignment.BottomCenter)
-                .padding(bottom = 32.dp, start = 24.dp, end = 24.dp),
-            shape = RoundedCornerShape(28.dp),
-            color = Color.Black.copy(alpha = 0.75f)
         ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
-                horizontalArrangement = Arrangement.SpaceEvenly,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Mute Mic Toggle
-                IconButton(
-                    onClick = { onToggleMute(!callState.isMuted) },
-                    modifier = Modifier
-                        .size(52.dp)
-                        .background(
-                            if (callState.isMuted) Color.Red else Color.White.copy(alpha = 0.2f),
-                            CircleShape
-                        )
-                ) {
-                    Icon(
-                        imageVector = if (callState.isMuted) Icons.Default.MicOff else Icons.Default.Mic,
-                        contentDescription = "Mic",
-                        tint = Color.White
-                    )
-                }
-
-                // Camera On/Off Toggle
-                IconButton(
-                    onClick = { onToggleCamera(!callState.isCameraOff) },
-                    modifier = Modifier
-                        .size(52.dp)
-                        .background(
-                            if (callState.isCameraOff) Color.Red else Color.White.copy(alpha = 0.2f),
-                            CircleShape
-                        )
-                ) {
-                    Icon(
-                        imageVector = if (callState.isCameraOff) Icons.Default.VideocamOff else Icons.Default.Videocam,
-                        contentDescription = "Video",
-                        tint = Color.White
-                    )
-                }
-
-                // Switch Camera Front/Back
-                IconButton(
-                    onClick = onSwitchCamera,
-                    modifier = Modifier
-                        .size(52.dp)
-                        .background(Color.White.copy(alpha = 0.2f), CircleShape)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.SwitchCamera,
-                        contentDescription = "Switch Camera",
-                        tint = Color.White
-                    )
-                }
-
-                // End Call Button
-                IconButton(
-                    onClick = onEndCall,
-                    modifier = Modifier
-                        .size(56.dp)
-                        .background(Color.Red, CircleShape)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.CallEnd,
-                        contentDescription = "End Call",
-                        tint = Color.White
-                    )
-                }
-            }
+            Icon(
+                imageVector = Icons.Default.CallEnd,
+                contentDescription = "End Call",
+                tint = Color.White,
+                modifier = Modifier.size(36.dp)
+            )
         }
     }
 }
