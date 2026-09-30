@@ -9,11 +9,11 @@ import androidx.compose.ui.unit.dp
 import com.example.videoqongiroq.data.CallState
 import com.example.videoqongiroq.data.User
 import com.example.videoqongiroq.ui.components.PermissionHandler
-import com.example.videoqongiroq.ui.screens.CallScreen
-import com.example.videoqongiroq.ui.screens.LoginScreen
-import com.example.videoqongiroq.ui.screens.UsersListScreen
+import com.example.videoqongiroq.ui.screens.NexusCallScreen
+import com.example.videoqongiroq.ui.screens.NexusLoginScreen
+import com.example.videoqongiroq.ui.screens.NexusUsersScreen
 import com.example.videoqongiroq.utils.AutoUpdateManager
-import com.example.videoqongiroq.webrtc.CallEngine
+import com.example.videoqongiroq.webrtc.NexusCallEngine
 import com.example.videoqongiroq.webrtc.SignalingClient
 import kotlinx.coroutines.launch
 
@@ -23,7 +23,7 @@ fun VideoQongiroqApp() {
     val scope = rememberCoroutineScope()
 
     val signalingClient = remember { SignalingClient() }
-    val callEngine = remember { CallEngine(context) }
+    val nexusCallEngine = remember { NexusCallEngine(context) }
     val autoUpdateManager = remember { AutoUpdateManager(context) }
 
     val currentUser by signalingClient.currentUser.collectAsState()
@@ -47,7 +47,7 @@ fun VideoQongiroqApp() {
         }
     }
 
-    // Wire Call Engine callbacks with WebSocket Signaling Client
+    // Wire Nexus Call Engine callbacks with WebSocket Signaling Client
     LaunchedEffect(Unit) {
         // When peer accepts our call, create WebRTC offer
         signalingClient.onCallAcceptedReceived = { targetPhone, roomId ->
@@ -55,15 +55,15 @@ fun VideoQongiroqApp() {
                 ?: User(phone = targetPhone, name = targetPhone)
             signalingClient.transitionToInCall(peerUser, roomId = roomId, isVideo = true)
 
-            callEngine.createOffer { sdp ->
+            nexusCallEngine.createOffer { sdp ->
                 signalingClient.sendOffer(targetPhone, sdp)
             }
         }
 
         // When offer is received from peer
         signalingClient.onOfferReceived = { senderPhone, offerSdp ->
-            callEngine.setRemoteDescription(offerSdp) {
-                callEngine.createAnswer { answerSdp ->
+            nexusCallEngine.setRemoteDescription(offerSdp) {
+                nexusCallEngine.createAnswer { answerSdp ->
                     signalingClient.sendAnswer(senderPhone, answerSdp)
                 }
             }
@@ -71,16 +71,16 @@ fun VideoQongiroqApp() {
 
         // When answer is received from peer
         signalingClient.onAnswerReceived = { _, answerSdp ->
-            callEngine.setRemoteDescription(answerSdp)
+            nexusCallEngine.setRemoteDescription(answerSdp)
         }
 
         // When ICE candidate is received
         signalingClient.onIceCandidateReceived = { _, candidate ->
-            callEngine.addIceCandidate(candidate)
+            nexusCallEngine.addIceCandidate(candidate)
         }
 
         // Local WebRTC ICE candidate generated callback
-        callEngine.onIceCandidateReady = { candidate ->
+        nexusCallEngine.onIceCandidateReady = { candidate ->
             val currentCall = signalingClient.callState.value
             val targetPhone = when (currentCall) {
                 is CallState.InCall -> currentCall.peerUser.phone
@@ -103,7 +103,7 @@ fun VideoQongiroqApp() {
             )
         } else {
             if (currentUser == null) {
-                LoginScreen(
+                NexusLoginScreen(
                     onLoginSuccess = { phone, name ->
                         signalingClient.login(context, phone, name)
                     }
@@ -111,7 +111,7 @@ fun VideoQongiroqApp() {
             } else {
                 when (callState) {
                     CallState.Idle -> {
-                        UsersListScreen(
+                        NexusUsersScreen(
                             currentUser = currentUser,
                             onlineUsers = onlineUsers,
                             serverUrl = serverUrl,
@@ -138,10 +138,10 @@ fun VideoQongiroqApp() {
                         )
                     }
                     else -> {
-                        CallScreen(
+                        NexusCallScreen(
                             currentUser = currentUser,
                             callState = callState,
-                            callEngine = callEngine,
+                            callEngine = nexusCallEngine,
                             onAcceptCall = {
                                 if (callState is CallState.IncomingCall) {
                                     val caller = (callState as CallState.IncomingCall).callerUser
@@ -152,15 +152,15 @@ fun VideoQongiroqApp() {
                                 if (callState is CallState.IncomingCall) {
                                     val caller = (callState as CallState.IncomingCall).callerUser
                                     signalingClient.rejectIncomingCall(caller)
-                                    callEngine.stopCall()
+                                    nexusCallEngine.stopCall()
                                 }
                             },
                             onEndCall = {
                                 signalingClient.endCall("Qo'ng'iroq yakunlandi")
-                                callEngine.stopCall()
+                                nexusCallEngine.stopCall()
                             },
                             onToggleMute = { isMuted ->
-                                callEngine.toggleMute(isMuted)
+                                nexusCallEngine.toggleMute(isMuted)
                                 if (callState is CallState.InCall) {
                                     val state = callState as CallState.InCall
                                     signalingClient.updateCallControls(
@@ -171,7 +171,7 @@ fun VideoQongiroqApp() {
                                 }
                             },
                             onToggleCamera = { isCameraOff ->
-                                callEngine.toggleCamera(isCameraOff)
+                                nexusCallEngine.toggleCamera(isCameraOff)
                                 if (callState is CallState.InCall) {
                                     val state = callState as CallState.InCall
                                     signalingClient.updateCallControls(
@@ -182,7 +182,7 @@ fun VideoQongiroqApp() {
                                 }
                             },
                             onSwitchCamera = {
-                                callEngine.switchCamera()
+                                nexusCallEngine.switchCamera()
                                 if (callState is CallState.InCall) {
                                     val state = callState as CallState.InCall
                                     signalingClient.updateCallControls(
