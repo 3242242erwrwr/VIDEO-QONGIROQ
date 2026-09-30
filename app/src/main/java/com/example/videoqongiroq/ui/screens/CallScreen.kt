@@ -1,5 +1,8 @@
 package com.example.videoqongiroq.ui.screens
 
+import android.content.Context
+import android.media.AudioManager
+import android.util.Log
 import android.view.ViewGroup
 import android.webkit.PermissionRequest
 import android.webkit.WebChromeClient
@@ -20,6 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -263,13 +267,44 @@ fun ActiveCallContent(
     callState: CallState.InCall,
     onEndCall: () -> Unit
 ) {
+    val context = LocalContext.current
     var callSeconds by remember { mutableStateOf(0) }
 
+    fun cleanLast9Digits(phone: String): String {
+        val digits = phone.filter { it.isDigit() }
+        return if (digits.length >= 9) digits.takeLast(9) else digits
+    }
+
     val roomName = remember(currentUser?.phone, callState.peerUser.phone) {
-        val p1 = (currentUser?.phone ?: "998000000000").filter { it.isDigit() }
-        val p2 = callState.peerUser.phone.filter { it.isDigit() }
+        val p1 = cleanLast9Digits(currentUser?.phone ?: "900000000")
+        val p2 = cleanLast9Digits(callState.peerUser.phone)
         val sorted = listOf(p1, p2).sorted()
         "qongiroq_${sorted[0]}_${sorted[1]}"
+    }
+
+    // Configure Audio Manager for Call Mode and Speakerphone
+    DisposableEffect(Unit) {
+        val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        try {
+            audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
+            @Suppress("DEPRECATION")
+            audioManager.isSpeakerphoneOn = true
+            audioManager.isMicrophoneMute = false
+            val maxVol = audioManager.getStreamMaxVolume(AudioManager.STREAM_VOICE_CALL)
+            audioManager.setStreamVolume(AudioManager.STREAM_VOICE_CALL, maxVol, 0)
+        } catch (e: Exception) {
+            Log.e("CallScreen", "Audio setup error", e)
+        }
+
+        onDispose {
+            try {
+                audioManager.mode = AudioManager.MODE_NORMAL
+                @Suppress("DEPRECATION")
+                audioManager.isSpeakerphoneOn = false
+            } catch (e: Exception) {
+                Log.e("CallScreen", "Audio reset error", e)
+            }
+        }
     }
 
     LaunchedEffect(roomName) {
@@ -280,7 +315,7 @@ fun ActiveCallContent(
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        // High-Speed WebRTC Global Call Engine (Meet Jitsi WebRTC Cluster)
+        // High-Speed WebRTC Global Call Engine
         AndroidView(
             factory = { ctx ->
                 WebView(ctx).apply {
@@ -310,7 +345,7 @@ fun ActiveCallContent(
                         }
                     }
 
-                    val callUrl = "https://meet.jit.si/$roomName#config.prejoinPageEnabled=false&config.startWithAudioMuted=false&config.startWithVideoMuted=false"
+                    val callUrl = "https://meet.jit.si/$roomName#config.prejoinPageEnabled=false&config.startWithAudioMuted=false&config.startWithVideoMuted=false&config.requireDisplayName=false&config.enableWelcomePage=false"
                     loadUrl(callUrl)
                 }
             },
