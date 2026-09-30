@@ -94,60 +94,63 @@ class WebRTCManager(private val context: Context) {
     }
 
     fun initLocalSurfaceView(renderer: SurfaceViewRenderer) {
-        if (localSurfaceView == renderer && isLocalRendererInitialized) {
-            return
-        }
         localSurfaceView = renderer
-        try {
-            if (!isLocalRendererInitialized) {
+        if (!isLocalRendererInitialized) {
+            try {
                 renderer.init(eglBase.eglBaseContext, null)
                 renderer.setEnableHardwareScaler(true)
                 renderer.setMirror(true)
                 renderer.setZOrderMediaOverlay(true)
                 isLocalRendererInitialized = true
+            } catch (e: Exception) {
+                Log.e(TAG, "Error initializing local SurfaceView", e)
             }
-
-            localVideoTrack?.let { track ->
-                mainHandler.post {
-                    try {
-                        track.removeSink(renderer)
-                        track.addSink(renderer)
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Error adding sink to local surface", e)
-                    }
-                }
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error initializing local SurfaceView", e)
         }
+        bindLocalTrackToView()
     }
 
     fun initRemoteSurfaceView(renderer: SurfaceViewRenderer) {
-        if (remoteSurfaceView == renderer && isRemoteRendererInitialized) {
-            return
-        }
         remoteSurfaceView = renderer
-        try {
-            if (!isRemoteRendererInitialized) {
+        if (!isRemoteRendererInitialized) {
+            try {
                 renderer.init(eglBase.eglBaseContext, null)
                 renderer.setEnableHardwareScaler(true)
                 renderer.setMirror(false)
                 isRemoteRendererInitialized = true
+            } catch (e: Exception) {
+                Log.e(TAG, "Error initializing remote SurfaceView", e)
             }
+        }
+        bindRemoteTrackToView()
+    }
 
-            remoteVideoTrack?.let { track ->
-                mainHandler.post {
-                    try {
-                        track.removeSink(renderer)
-                        track.addSink(renderer)
-                        Log.d(TAG, "Attached remote track to SurfaceViewRenderer")
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Error adding sink to remote surface", e)
-                    }
-                }
+    private fun bindLocalTrackToView() {
+        val track = localVideoTrack ?: return
+        val view = localSurfaceView ?: return
+
+        mainHandler.post {
+            try {
+                track.removeSink(view)
+                track.addSink(view)
+                Log.d(TAG, "Bound local VideoTrack to SurfaceViewRenderer successfully")
+            } catch (e: Exception) {
+                Log.e(TAG, "Error binding local track to view", e)
             }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error initializing remote SurfaceView", e)
+        }
+    }
+
+    private fun bindRemoteTrackToView() {
+        val track = remoteVideoTrack ?: return
+        val view = remoteSurfaceView ?: return
+
+        mainHandler.post {
+            try {
+                track.removeSink(view)
+                track.addSink(view)
+                Log.d(TAG, "Bound remote VideoTrack to SurfaceViewRenderer successfully")
+            } catch (e: Exception) {
+                Log.e(TAG, "Error binding remote track to view", e)
+            }
         }
     }
 
@@ -194,9 +197,7 @@ class WebRTCManager(private val context: Context) {
             localVideoTrack = peerConnectionFactory?.createVideoTrack(LOCAL_TRACK_ID, videoSource)
             localVideoTrack?.setEnabled(true)
 
-            localSurfaceView?.let { view ->
-                localVideoTrack?.addSink(view)
-            }
+            bindLocalTrackToView()
         }
     }
 
@@ -319,34 +320,22 @@ class WebRTCManager(private val context: Context) {
 
         peerConnection = peerConnectionFactory?.createPeerConnection(rtcConfig, observer)
 
-        // Add local tracks with explicit SEND_RECV direction
-        val mediaStream = peerConnectionFactory?.createLocalMediaStream(LOCAL_STREAM_ID)
-        val init = RtpTransceiver.RtpTransceiverInit(RtpTransceiver.RtpTransceiverDirection.SEND_RECV)
-
-        localAudioTrack?.let {
-            mediaStream?.addTrack(it)
-            peerConnection?.addTransceiver(it, init)
+        // Add local tracks to stream
+        val streamIds = listOf(LOCAL_STREAM_ID)
+        localAudioTrack?.let { track ->
+            peerConnection?.addTrack(track, streamIds)
         }
-        localVideoTrack?.let {
-            mediaStream?.addTrack(it)
-            peerConnection?.addTransceiver(it, init)
+        localVideoTrack?.let { track ->
+            peerConnection?.addTrack(track, streamIds)
         }
     }
 
     private fun attachRemoteVideoTrack(track: VideoTrack) {
+        Log.d(TAG, "attachRemoteVideoTrack: $track")
         remoteVideoTrack = track
+        track.setEnabled(true)
         onRemoteVideoTrackReceived?.invoke(track)
-        mainHandler.post {
-            remoteSurfaceView?.let { view ->
-                try {
-                    track.removeSink(view)
-                    track.addSink(view)
-                    Log.d(TAG, "Remote video track successfully attached to view!")
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error attaching remote track to view", e)
-                }
-            }
-        }
+        bindRemoteTrackToView()
     }
 
     fun createOffer(onSdpCreated: (SessionDescription) -> Unit) {
