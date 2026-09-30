@@ -13,7 +13,7 @@ import com.example.videoqongiroq.ui.screens.CallScreen
 import com.example.videoqongiroq.ui.screens.LoginScreen
 import com.example.videoqongiroq.ui.screens.UsersListScreen
 import com.example.videoqongiroq.utils.AutoUpdateManager
-import com.example.videoqongiroq.webrtc.AgoraVideoManager
+import com.example.videoqongiroq.webrtc.NativeWebRTCManager
 import com.example.videoqongiroq.webrtc.SignalingClient
 import kotlinx.coroutines.launch
 
@@ -23,7 +23,7 @@ fun VideoQongiroqApp() {
     val scope = rememberCoroutineScope()
 
     val signalingClient = remember { SignalingClient() }
-    val agoraVideoManager = remember { AgoraVideoManager(context) }
+    val rtcManager = remember { NativeWebRTCManager(context) }
     val autoUpdateManager = remember { AutoUpdateManager(context) }
 
     val currentUser by signalingClient.currentUser.collectAsState()
@@ -47,13 +47,52 @@ fun VideoQongiroqApp() {
         }
     }
 
-    // Wire Signaling Client callbacks
+    // Wire Native WebRTC callbacks with WebSocket Signaling Client
     LaunchedEffect(Unit) {
-        // When peer accepts our call, transition to InCall
+        // When peer accepts our call, create WebRTC offer
         signalingClient.onCallAcceptedReceived = { targetPhone, roomId ->
             val peerUser = signalingClient.onlineUsers.value.find { it.phone == targetPhone }
                 ?: User(phone = targetPhone, name = targetPhone)
             signalingClient.transitionToInCall(peerUser, roomId = roomId, isVideo = true)
+
+            rtcManager.createPeerConnection()
+            rtcManager.createOffer { sdp ->
+                signalingClient.sendOffer(targetPhone, sdp)
+            }
+        }
+
+        // When offer is received from peer
+        signalingClient.onOfferReceived = { senderPhone, offerSdp ->
+            rtcManager.createPeerConnection()
+            rtcManager.setRemoteDescription(offerSdp) {
+                rtcManager.createAnswer { answerSdp ->
+                    signalingClient.sendAnswer(senderPhone, answerSdp)
+                }
+            }
+        }
+
+        // When answer is received from peer
+        signalingClient.onAnswerReceived = { _, answerSdp ->
+            rtcManager.setRemoteDescription(answerSdp)
+        }
+
+        // When ICE candidate is received
+        signalingClient.onIceCandidateReceived = { _, candidate ->
+            rtcManager.addIceCandidate(candidate)
+        }
+
+        // Local WebRTC ICE candidate generated callback
+        rtcManager.onIceCandidateGenerated = { candidate ->
+            val currentCall = signalingClient.callState.value
+            val targetPhone = when (currentCall) {
+                is CallState.InCall -> currentCall.peerUser.phone
+                is CallState.OutgoingCall -> currentCall.targetUser.phone
+                is CallState.IncomingCall -> currentCall.callerUser.phone
+                else -> ""
+            }
+            if (targetPhone.isNotEmpty()) {
+                signalingClient.sendIceCandidate(targetPhone, candidate)
+            }
         }
     }
 
@@ -104,7 +143,7 @@ fun VideoQongiroqApp() {
                         CallScreen(
                             currentUser = currentUser,
                             callState = callState,
-                            agoraVideoManager = agoraVideoManager,
+                            rtcManager = rtcManager,
                             onAcceptCall = {
                                 if (callState is CallState.IncomingCall) {
                                     val caller = (callState as CallState.IncomingCall).callerUser
@@ -121,7 +160,7 @@ fun VideoQongiroqApp() {
                                 signalingClient.endCall("Qo'ng'iroq yakunlandi")
                             },
                             onToggleMute = { isMuted ->
-                                agoraVideoManager.toggleMute(isMuted)
+                                rtcManager.toggleMute(isMuted)
                                 if (callState is CallState.InCall) {
                                     val state = callState as CallState.InCall
                                     signalingClient.updateCallControls(
@@ -132,7 +171,7 @@ fun VideoQongiroqApp() {
                                 }
                             },
                             onToggleCamera = { isCameraOff ->
-                                agoraVideoManager.toggleCamera(isCameraOff)
+                                rtcManager.toggleCamera(isCameraOff)
                                 if (callState is CallState.InCall) {
                                     val state = callState as CallState.InCall
                                     signalingClient.updateCallControls(
@@ -143,7 +182,7 @@ fun VideoQongiroqApp() {
                                 }
                             },
                             onSwitchCamera = {
-                                agoraVideoManager.switchCamera()
+                                rtcManager.switchCamera()
                                 if (callState is CallState.InCall) {
                                     val state = callState as CallState.InCall
                                     signalingClient.updateCallControls(
