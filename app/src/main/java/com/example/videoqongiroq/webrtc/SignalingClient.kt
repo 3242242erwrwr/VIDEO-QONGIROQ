@@ -1,8 +1,10 @@
 package com.example.videoqongiroq.webrtc
 
+import android.content.Context
 import android.util.Log
 import com.example.videoqongiroq.data.CallState
 import com.example.videoqongiroq.data.User
+import com.example.videoqongiroq.data.UserPreferences
 import com.example.videoqongiroq.data.UserStatus
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -43,28 +45,47 @@ class SignalingClient {
         private const val TAG = "SignalingClient"
     }
 
-    fun setServerUrl(newUrl: String) {
+    fun setServerUrl(context: Context, newUrl: String) {
         val trimmed = newUrl.trim()
         if (trimmed.isNotEmpty()) {
             _serverUrl.value = if (trimmed.endsWith("/")) trimmed else "$trimmed/"
             val user = _currentUser.value
             if (user != null) {
-                login(user.phone, user.name)
+                login(context, user.phone, user.name)
             }
         }
     }
 
-    fun login(phone: String, name: String) {
-        val cleanPhone = phone.filter { it.isDigit() }
+    fun autoConnectIfSaved(context: Context): Boolean {
+        val saved = UserPreferences(context).getUser()
+        if (saved != null) {
+            _currentUser.value = saved
+            connectWebSocket(saved)
+            return true
+        }
+        return false
+    }
+
+    fun login(context: Context, phone: String, name: String) {
+        val cleanDigits = phone.filter { it.isDigit() }
+        val fullPhone = if (cleanDigits.startsWith("998")) cleanDigits else "998$cleanDigits"
         val user = User(
-            phone = if (cleanPhone.isNotEmpty()) cleanPhone else "998901234567",
+            phone = if (fullPhone.length >= 10) fullPhone else "998901234567",
             name = if (name.isNotBlank()) name else "Foydalanuvchi",
             status = UserStatus.AVAILABLE,
             isLocalUser = true
         )
+        UserPreferences(context).saveUser(user.phone, user.name)
         _currentUser.value = user
 
         connectWebSocket(user)
+    }
+
+    fun logout(context: Context) {
+        UserPreferences(context).clearUser()
+        close()
+        _currentUser.value = null
+        _callState.value = CallState.Idle
     }
 
     private fun connectWebSocket(user: User) {
@@ -138,6 +159,7 @@ class SignalingClient {
                             val status = when (statusStr) {
                                 "BUSY" -> UserStatus.BUSY
                                 "IN_CALL" -> UserStatus.IN_CALL
+                                "OFFLINE" -> UserStatus.OFFLINE
                                 else -> UserStatus.AVAILABLE
                             }
                             list.add(User(phone = phone, name = name, status = status))

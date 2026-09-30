@@ -7,6 +7,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -18,7 +19,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.videoqongiroq.data.User
-import com.example.videoqongiroq.data.UserStatus
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -27,6 +27,7 @@ fun UsersListScreen(
     onlineUsers: List<User>,
     serverUrl: String,
     onUpdateServerUrl: (String) -> Unit,
+    onLogout: () -> Unit,
     onStartCall: (User) -> Unit,
     onAddContact: (phone: String, name: String) -> Unit,
     onSimulateIncomingCall: () -> Unit
@@ -80,6 +81,13 @@ fun UsersListScreen(
                             tint = MaterialTheme.colorScheme.primary
                         )
                     }
+                    IconButton(onClick = onLogout) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ExitToApp,
+                            contentDescription = "Chiqish",
+                            tint = MaterialTheme.colorScheme.error
+                        )
+                    }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.surfaceVariant
@@ -125,7 +133,7 @@ fun UsersListScreen(
             Spacer(modifier = Modifier.height(16.dp))
 
             Text(
-                text = "ONLINE ABONENTLAR (${filteredUsers.size})",
+                text = "ONLINE / OFFLINE ABONENTLAR (${filteredUsers.size})",
                 style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.primary,
@@ -140,7 +148,7 @@ fun UsersListScreen(
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = "Serverda boshqa online abonentlar yo'q. Boshqa telefondan ham kiring va muloqot qiling!",
+                        text = "Boshqa abonentlar topilmadi. Yuqoridagi '+' tugmasi orqali yangi telefon raqam qo'shing!",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )

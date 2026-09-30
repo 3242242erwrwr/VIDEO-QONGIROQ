@@ -28,6 +28,13 @@ fun VideoQongiroqApp() {
 
     var permissionsGranted by remember { mutableStateOf(false) }
 
+    // Auto connect on launch if user details are saved
+    LaunchedEffect(permissionsGranted) {
+        if (permissionsGranted) {
+            signalingClient.autoConnectIfSaved(context)
+        }
+    }
+
     // Wire WebRTC Manager callbacks with WebSocket Signaling Client
     LaunchedEffect(Unit) {
         // When peer accepts our call, create WebRTC offer
@@ -88,7 +95,7 @@ fun VideoQongiroqApp() {
             if (currentUser == null) {
                 LoginScreen(
                     onLoginSuccess = { phone, name ->
-                        signalingClient.login(phone, name)
+                        signalingClient.login(context, phone, name)
                     }
                 )
             } else {
@@ -99,7 +106,10 @@ fun VideoQongiroqApp() {
                             onlineUsers = onlineUsers,
                             serverUrl = serverUrl,
                             onUpdateServerUrl = { newUrl ->
-                                signalingClient.setServerUrl(newUrl)
+                                signalingClient.setServerUrl(context, newUrl)
+                            },
+                            onLogout = {
+                                signalingClient.logout(context)
                             },
                             onStartCall = { targetUser ->
                                 signalingClient.startCall(targetUser, isVideo = true)

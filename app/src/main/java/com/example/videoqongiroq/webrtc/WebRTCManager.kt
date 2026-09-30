@@ -169,14 +169,27 @@ class WebRTCManager(private val context: Context) {
         localAudioTrack = peerConnectionFactory?.createAudioTrack(LOCAL_AUDIO_TRACK_ID, audioSource)
         localAudioTrack?.setEnabled(true)
 
-        // Create Video track
+        // Create Video track with camera resolution fallbacks
         val capturer = createCameraCapturer()
         if (capturer != null) {
             videoCapturer = capturer
             val surfaceTextureHelper = SurfaceTextureHelper.create("CaptureThread", eglBase.eglBaseContext)
             videoSource = peerConnectionFactory?.createVideoSource(capturer.isScreencast)
             capturer.initialize(surfaceTextureHelper, context, videoSource?.capturerObserver)
-            capturer.startCapture(1280, 720, 30)
+
+            try {
+                capturer.startCapture(1280, 720, 30)
+            } catch (e1: Exception) {
+                try {
+                    capturer.startCapture(640, 480, 30)
+                } catch (e2: Exception) {
+                    try {
+                        capturer.startCapture(320, 240, 30)
+                    } catch (e3: Exception) {
+                        Log.e(TAG, "Could not start camera capturer", e3)
+                    }
+                }
+            }
 
             localVideoTrack = peerConnectionFactory?.createVideoTrack(LOCAL_TRACK_ID, videoSource)
             localVideoTrack?.setEnabled(true)
