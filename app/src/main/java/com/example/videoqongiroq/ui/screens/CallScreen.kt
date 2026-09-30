@@ -338,7 +338,9 @@ fun ActiveCallContent(
                         }
                     }
 
-                    val callUrl = "https://video-qongiroq.onrender.com/call.html?room=$roomName&caller=$isCaller"
+                    val myPhone = currentUser?.phone ?: ""
+                    val peerPhone = callState.peerUser.phone
+                    val callUrl = "https://video-qongiroq.onrender.com/call.html?myPhone=$myPhone&peerPhone=$peerPhone&caller=$isCaller"
                     loadUrl(callUrl)
                 }
             },

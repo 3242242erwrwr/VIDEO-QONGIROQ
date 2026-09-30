@@ -4,10 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Video Qongiroq</title>
-    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { background-color: #000; color: #fff; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; overflow: hidden; width: 100vw; height: 100vh; }
+        body { background-color: #000; color: #fff; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; overflow: hidden; width: 100vw; height: 100vh; }
         #remoteVideo { width: 100vw; height: 100vh; object-fit: cover; position: absolute; top: 0; left: 0; z-index: 1; }
         #localVideo { width: 110px; height: 160px; object-fit: cover; position: absolute; top: 48px; right: 16px; border-radius: 16px; border: 2px solid rgba(255,255,255,0.8); z-index: 10; transform: scaleX(-1); background: #222; }
         #statusBadge { position: absolute; top: 48px; left: 16px; background: rgba(0, 0, 0, 0.65); padding: 8px 14px; border-radius: 12px; z-index: 20; font-size: 13px; font-weight: bold; color: #4CAF50; backdrop-filter: blur(4px); display: flex; align-items: center; gap: 8px; }
@@ -21,74 +20,101 @@
 
     <script>
         const urlParams = new URLSearchParams(window.location.search);
-        const roomId = urlParams.get('room') || 'default_room';
+        const myPhone = (urlParams.get('myPhone') || '').replace('+', '').trim();
+        const peerPhone = (urlParams.get('peerPhone') || '').replace('+', '').trim();
         const isCaller = urlParams.get('caller') === 'true';
-
-        const myId = isCaller ? roomId + '_caller' : roomId + '_callee';
-        const peerId = isCaller ? roomId + '_callee' : roomId + '_caller';
 
         const remoteVideo = document.getElementById('remoteVideo');
         const localVideo = document.getElementById('localVideo');
         const statusText = document.getElementById('statusText');
 
+        const wsUrl = 'wss://video-qongiroq.onrender.com/ws/' + myPhone + '?name=CallUser';
+        const socket = new WebSocket(wsUrl);
+
+        const rtcConfig = {
+            iceServers: [
+                { urls: 'stun:stun.l.google.com:19302' },
+                { urls: 'stun:stun1.l.google.com:19302' },
+                { urls: 'stun:stun2.l.google.com:19302' },
+                { urls: 'stun:openrelay.metered.ca:80' },
+                { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
+                { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
+                { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' }
+            ]
+        };
+
+        let pc = new RTCPeerConnection(rtcConfig);
         let localStream = null;
 
-        const peer = new Peer(myId, {
-            host: '0.peerjs.com',
-            port: 443,
-            secure: true,
-            config: {
-                iceServers: [
-                    { urls: 'stun:stun.l.google.com:19302' },
-                    { urls: 'stun:stun1.l.google.com:19302' },
-                    { urls: 'stun:openrelay.metered.ca:80' },
-                    { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
-                    { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' }
-                ]
-            }
-        });
-
-        navigator.mediaDevices.getUserMedia({
-            video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } },
-            audio: true
-        })
+        navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: true })
         .then(stream => {
             localStream = stream;
             localVideo.srcObject = stream;
 
-            peer.on('call', call => {
-                call.answer(localStream);
-                call.on('stream', remoteStream => {
-                    remoteVideo.srcObject = remoteStream;
-                    statusText.innerText = 'Abonent ulangan (Onlayn)';
-                });
-            });
+            stream.getTracks().forEach(track => pc.addTrack(track, stream));
 
-            if (isCaller) {
-                let attempts = 0;
-                function tryCall() {
-                    attempts++;
-                    const call = peer.call(peerId, localStream);
-                    if (call) {
-                        call.on('stream', remoteStream => {
-                            remoteVideo.srcObject = remoteStream;
-                            statusText.innerText = 'Abonent ulangan (Onlayn)';
-                        });
-                    }
-                    if (attempts < 10 && statusText.innerText.includes('ulanilmoqda')) {
-                        setTimeout(tryCall, 1500);
-                    }
+            pc.ontrack = event => {
+                if (event.streams && event.streams[0]) {
+                    remoteVideo.srcObject = event.streams[0];
+                    statusText.innerText = 'Abonent ulangan (Onlayn)';
                 }
-                setTimeout(tryCall, 1000);
+            };
+
+            pc.onicecandidate = event => {
+                if (event.candidate && socket.readyState === WebSocket.OPEN) {
+                    socket.send(JSON.stringify({
+                        type: 'webrtc_ice',
+                        receiverPhone: peerPhone,
+                        candidate: event.candidate
+                    }));
+                }
+            };
+
+            function initiateOffer() {
+                if (isCaller && socket.readyState === WebSocket.OPEN) {
+                    pc.createOffer()
+                    .then(offer => pc.setLocalDescription(offer))
+                    .then(() => {
+                        socket.send(JSON.stringify({
+                            type: 'webrtc_offer',
+                            receiverPhone: peerPhone,
+                            sdp: pc.localDescription
+                        }));
+                    });
+                }
+            }
+
+            if (socket.readyState === WebSocket.OPEN) {
+                initiateOffer();
+            } else {
+                socket.onopen = () => initiateOffer();
             }
         })
         .catch(err => {
-            statusText.innerText = 'Kamera ruxsati xatosi: ' + err.message;
+            statusText.innerText = 'Kamera xatosi: ' + err.message;
         });
 
-        peer.on('error', err => {
-            console.error('PeerJS error:', err);
-        });
+        socket.onmessage = async (event) => {
+            const data = JSON.parse(event.data);
+            if (data.type === 'webrtc_offer') {
+                await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
+                const answer = await pc.createAnswer();
+                await pc.setLocalDescription(answer);
+                socket.send(JSON.stringify({
+                    type: 'webrtc_answer',
+                    receiverPhone: peerPhone,
+                    sdp: pc.localDescription
+                }));
+            } else if (data.type === 'webrtc_answer') {
+                await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
+            } else if (data.type === 'webrtc_ice') {
+                try {
+                    await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+                } catch (e) {
+                    console.error('ICE Candidate error:', e);
+                }
+            }
+        };
     </script>
 </body>
 </html>
