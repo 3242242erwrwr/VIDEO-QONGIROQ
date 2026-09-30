@@ -21,7 +21,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.example.videoqongiroq.data.CallState
 import com.example.videoqongiroq.data.User
-import com.example.videoqongiroq.webrtc.NativeWebRTCManager
+import com.example.videoqongiroq.webrtc.CallEngine
 import kotlinx.coroutines.delay
 import org.webrtc.SurfaceViewRenderer
 import java.util.Locale
@@ -30,7 +30,7 @@ import java.util.Locale
 fun CallScreen(
     currentUser: User?,
     callState: CallState,
-    rtcManager: NativeWebRTCManager?,
+    callEngine: CallEngine?,
     onAcceptCall: () -> Unit,
     onRejectCall: () -> Unit,
     onEndCall: () -> Unit,
@@ -60,7 +60,7 @@ fun CallScreen(
             is CallState.InCall -> {
                 ActiveCallContent(
                     callState = callState,
-                    rtcManager = rtcManager,
+                    callEngine = callEngine,
                     onEndCall = onEndCall,
                     onToggleMute = onToggleMute,
                     onToggleCamera = onToggleCamera,
@@ -259,7 +259,7 @@ fun OutgoingCallContent(
 @Composable
 fun ActiveCallContent(
     callState: CallState.InCall,
-    rtcManager: NativeWebRTCManager?,
+    callEngine: CallEngine?,
     onEndCall: () -> Unit,
     onToggleMute: (Boolean) -> Unit,
     onToggleCamera: (Boolean) -> Unit,
@@ -268,8 +268,8 @@ fun ActiveCallContent(
     var callSeconds by remember { mutableStateOf(0) }
 
     LaunchedEffect(Unit) {
-        rtcManager?.startLocalVideo()
-        rtcManager?.createPeerConnection()
+        callEngine?.startLocalVideoAndAudio()
+        callEngine?.initPeerConnection()
 
         while (true) {
             delay(1000)
@@ -277,19 +277,13 @@ fun ActiveCallContent(
         }
     }
 
-    DisposableEffect(Unit) {
-        onDispose {
-            rtcManager?.close()
-        }
-    }
-
     Box(modifier = Modifier.fillMaxSize()) {
         // Remote Video View (Full Screen)
-        if (rtcManager != null) {
+        if (callEngine != null) {
             AndroidView(
                 factory = { ctx ->
                     SurfaceViewRenderer(ctx).apply {
-                        rtcManager.initRemoteRenderer(this)
+                        callEngine.bindRemoteView(this)
                     }
                 },
                 modifier = Modifier.fillMaxSize()
@@ -311,7 +305,7 @@ fun ActiveCallContent(
         }
 
         // Local Video View (PIP Overlay Top Right)
-        if (rtcManager != null && !callState.isCameraOff) {
+        if (callEngine != null && !callState.isCameraOff) {
             Box(
                 modifier = Modifier
                     .padding(top = 48.dp, end = 16.dp)
@@ -323,7 +317,7 @@ fun ActiveCallContent(
                 AndroidView(
                     factory = { ctx ->
                         SurfaceViewRenderer(ctx).apply {
-                            rtcManager.initLocalRenderer(this)
+                            callEngine.bindLocalView(this)
                         }
                     },
                     modifier = Modifier.fillMaxSize()
