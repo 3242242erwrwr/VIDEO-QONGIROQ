@@ -30,6 +30,9 @@ class WebRTCManager(private val context: Context) {
     private var localSurfaceView: SurfaceViewRenderer? = null
     private var remoteSurfaceView: SurfaceViewRenderer? = null
 
+    private var isLocalRendererInitialized = false
+    private var isRemoteRendererInitialized = false
+
     private val pendingIceCandidates = mutableListOf<IceCandidate>()
     private var isRemoteDescriptionSet = false
 
@@ -72,7 +75,9 @@ class WebRTCManager(private val context: Context) {
             @Suppress("DEPRECATION")
             audioManager.isSpeakerphoneOn = true
             audioManager.isMicrophoneMute = false
-            Log.d(TAG, "Audio configured: Speakerphone ON, Mode IN_COMMUNICATION")
+            val maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_VOICE_CALL)
+            audioManager.setStreamVolume(AudioManager.STREAM_VOICE_CALL, maxVolume, 0)
+            Log.d(TAG, "Audio configured for call: Speakerphone ON, Max Volume")
         } catch (e: Exception) {
             Log.e(TAG, "Error setting up AudioManager", e)
         }
@@ -89,32 +94,55 @@ class WebRTCManager(private val context: Context) {
     }
 
     fun initLocalSurfaceView(renderer: SurfaceViewRenderer) {
+        if (localSurfaceView == renderer && isLocalRendererInitialized) {
+            return
+        }
         localSurfaceView = renderer
         try {
-            localSurfaceView?.init(eglBase.eglBaseContext, null)
-            localSurfaceView?.setEnableHardwareScaler(true)
-            localSurfaceView?.setMirror(true)
-            localSurfaceView?.setZOrderMediaOverlay(true)
+            if (!isLocalRendererInitialized) {
+                renderer.init(eglBase.eglBaseContext, null)
+                renderer.setEnableHardwareScaler(true)
+                renderer.setMirror(true)
+                renderer.setZOrderMediaOverlay(true)
+                isLocalRendererInitialized = true
+            }
 
-            localVideoTrack?.addSink(localSurfaceView)
+            localVideoTrack?.let { track ->
+                mainHandler.post {
+                    try {
+                        track.removeSink(renderer)
+                        track.addSink(renderer)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error adding sink to local surface", e)
+                    }
+                }
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Error initializing local SurfaceView", e)
         }
     }
 
     fun initRemoteSurfaceView(renderer: SurfaceViewRenderer) {
+        if (remoteSurfaceView == renderer && isRemoteRendererInitialized) {
+            return
+        }
         remoteSurfaceView = renderer
         try {
-            remoteSurfaceView?.init(eglBase.eglBaseContext, null)
-            remoteSurfaceView?.setEnableHardwareScaler(true)
-            remoteSurfaceView?.setMirror(false)
+            if (!isRemoteRendererInitialized) {
+                renderer.init(eglBase.eglBaseContext, null)
+                renderer.setEnableHardwareScaler(true)
+                renderer.setMirror(false)
+                isRemoteRendererInitialized = true
+            }
 
             remoteVideoTrack?.let { track ->
                 mainHandler.post {
                     try {
-                        track.addSink(remoteSurfaceView)
+                        track.removeSink(renderer)
+                        track.addSink(renderer)
+                        Log.d(TAG, "Attached remote track to SurfaceViewRenderer")
                     } catch (e: Exception) {
-                        Log.e(TAG, "Error adding sink to remoteSurfaceView", e)
+                        Log.e(TAG, "Error adding sink to remote surface", e)
                     }
                 }
             }
@@ -187,7 +215,7 @@ class WebRTCManager(private val context: Context) {
 
         startLocalVideo()
 
-        // STUN and TURN Servers specifically optimized for Cellular 4G/5G Networks & CGNAT
+        // Comprehensive STUN and TURN Servers for Guaranteed NAT Traversal on 4G & Wi-Fi
         val iceServers = listOf(
             IceServer.builder("stun:stun.l.google.com:19302").createIceServer(),
             IceServer.builder("stun:stun1.l.google.com:19302").createIceServer(),
@@ -278,15 +306,17 @@ class WebRTCManager(private val context: Context) {
 
         peerConnection = peerConnectionFactory?.createPeerConnection(rtcConfig, observer)
 
-        // Add local tracks
+        // Add local tracks with explicit SEND_RECV direction
         val mediaStream = peerConnectionFactory?.createLocalMediaStream(LOCAL_STREAM_ID)
+        val init = RtpTransceiver.RtpTransceiverInit(RtpTransceiver.RtpTransceiverDirection.SEND_RECV)
+
         localAudioTrack?.let {
             mediaStream?.addTrack(it)
-            peerConnection?.addTrack(it, listOf(LOCAL_STREAM_ID))
+            peerConnection?.addTransceiver(it, init)
         }
         localVideoTrack?.let {
             mediaStream?.addTrack(it)
-            peerConnection?.addTrack(it, listOf(LOCAL_STREAM_ID))
+            peerConnection?.addTransceiver(it, init)
         }
     }
 
@@ -296,6 +326,7 @@ class WebRTCManager(private val context: Context) {
         mainHandler.post {
             remoteSurfaceView?.let { view ->
                 try {
+                    track.removeSink(view)
                     track.addSink(view)
                     Log.d(TAG, "Remote video track successfully attached to view!")
                 } catch (e: Exception) {
@@ -314,8 +345,12 @@ class WebRTCManager(private val context: Context) {
         peerConnection?.createOffer(object : SdpObserverAdapter() {
             override fun onCreateSuccess(desc: SessionDescription?) {
                 desc?.let { sdp ->
-                    peerConnection?.setLocalDescription(object : SdpObserverAdapter() {}, sdp)
-                    onSdpCreated(sdp)
+                    peerConnection?.setLocalDescription(object : SdpObserverAdapter() {
+                        override fun onSetSuccess() {
+                            Log.d(TAG, "createOffer setLocalDescription SUCCESS")
+                            onSdpCreated(sdp)
+                        }
+                    }, sdp)
                 }
             }
         }, constraints)
@@ -330,8 +365,12 @@ class WebRTCManager(private val context: Context) {
         peerConnection?.createAnswer(object : SdpObserverAdapter() {
             override fun onCreateSuccess(desc: SessionDescription?) {
                 desc?.let { sdp ->
-                    peerConnection?.setLocalDescription(object : SdpObserverAdapter() {}, sdp)
-                    onSdpCreated(sdp)
+                    peerConnection?.setLocalDescription(object : SdpObserverAdapter() {
+                        override fun onSetSuccess() {
+                            Log.d(TAG, "createAnswer setLocalDescription SUCCESS")
+                            onSdpCreated(sdp)
+                        }
+                    }, sdp)
                 }
             }
         }, constraints)
@@ -391,6 +430,9 @@ class WebRTCManager(private val context: Context) {
     fun close() {
         resetAudio()
         isRemoteDescriptionSet = false
+        isLocalRendererInitialized = false
+        isRemoteRendererInitialized = false
+
         synchronized(pendingIceCandidates) {
             pendingIceCandidates.clear()
         }
@@ -414,6 +456,8 @@ class WebRTCManager(private val context: Context) {
 
         localSurfaceView?.release()
         remoteSurfaceView?.release()
+        localSurfaceView = null
+        remoteSurfaceView = null
         remoteVideoTrack = null
     }
 
