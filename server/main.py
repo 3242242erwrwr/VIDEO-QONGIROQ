@@ -1,8 +1,10 @@
 import json
 import asyncio
+import os
 from typing import Dict
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 
 app = FastAPI(title="Video Qongiroq Signaling Server")
 
@@ -37,9 +39,23 @@ async def get_status():
     return {
         "status": "online",
         "service": "Video Qongiroq Signaling Server",
+        "download_apk": "https://video-qongiroq.onrender.com/download",
         "active_users_count": online_count,
         "total_users_count": len(registered_users)
     }
+
+@app.get("/download")
+async def download_apk():
+    apk_path = "app-debug.apk"
+    if not os.path.exists(apk_path):
+        apk_path = os.path.join("server", "app-debug.apk")
+    if os.path.exists(apk_path):
+        return FileResponse(
+            path=apk_path,
+            filename="video_qongiroq_latest.apk",
+            media_type="application/vnd.android.package-archive"
+        )
+    return {"error": "APK file not found"}
 
 @app.websocket("/ws/{phone}")
 async def websocket_endpoint(websocket: WebSocket, phone: str):
