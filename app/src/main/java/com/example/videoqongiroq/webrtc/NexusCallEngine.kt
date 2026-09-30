@@ -216,18 +216,20 @@ class NexusCallEngine(private val context: Context) {
             PeerConnection.IceServer.builder("stun:stun1.l.google.com:19302").createIceServer(),
             PeerConnection.IceServer.builder("stun:stun2.l.google.com:19302").createIceServer(),
             PeerConnection.IceServer.builder("stun:stun3.l.google.com:19302").createIceServer(),
-            PeerConnection.IceServer.builder("stun:openrelay.metered.ca:80").createIceServer(),
-            PeerConnection.IceServer.builder("turn:openrelay.metered.ca:80")
-                .setUsername("openrelayproject")
-                .setPassword("openrelayproject")
+            PeerConnection.IceServer.builder("stun:stun4.l.google.com:19302").createIceServer(),
+            PeerConnection.IceServer.builder("stun:global.stun.twilio.com:3478").createIceServer(),
+            PeerConnection.IceServer.builder("stun:relay.metered.ca:80").createIceServer(),
+            PeerConnection.IceServer.builder("turn:relay.metered.ca:80")
+                .setUsername("e7a303dd50989fdfed2fb87a")
+                .setPassword("C/J/4bQfXp3kU63M")
                 .createIceServer(),
-            PeerConnection.IceServer.builder("turn:openrelay.metered.ca:443")
-                .setUsername("openrelayproject")
-                .setPassword("openrelayproject")
+            PeerConnection.IceServer.builder("turn:relay.metered.ca:443")
+                .setUsername("e7a303dd50989fdfed2fb87a")
+                .setPassword("C/J/4bQfXp3kU63M")
                 .createIceServer(),
-            PeerConnection.IceServer.builder("turn:openrelay.metered.ca:443?transport=tcp")
-                .setUsername("openrelayproject")
-                .setPassword("openrelayproject")
+            PeerConnection.IceServer.builder("turn:relay.metered.ca:443?transport=tcp")
+                .setUsername("e7a303dd50989fdfed2fb87a")
+                .setPassword("C/J/4bQfXp3kU63M")
                 .createIceServer()
         )
 
@@ -352,7 +354,12 @@ class NexusCallEngine(private val context: Context) {
                 isRemoteSdpSet = true
                 synchronized(pendingCandidates) {
                     for (candidate in pendingCandidates) {
-                        peerConnection?.addIceCandidate(candidate)
+                        try {
+                            peerConnection?.addIceCandidate(candidate)
+                            Log.d(TAG, "Flushed pending ICE candidate: ${candidate.sdpMid}")
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Error adding pending ICE candidate", e)
+                        }
                     }
                     pendingCandidates.clear()
                 }
@@ -367,7 +374,12 @@ class NexusCallEngine(private val context: Context) {
 
     fun addIceCandidate(candidate: IceCandidate) {
         if (isRemoteSdpSet) {
-            peerConnection?.addIceCandidate(candidate)
+            try {
+                peerConnection?.addIceCandidate(candidate)
+                Log.d(TAG, "Added ICE candidate directly: ${candidate.sdpMid}")
+            } catch (e: Exception) {
+                Log.e(TAG, "Error adding ICE candidate directly", e)
+            }
         } else {
             synchronized(pendingCandidates) {
                 pendingCandidates.add(candidate)
