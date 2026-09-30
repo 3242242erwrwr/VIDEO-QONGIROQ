@@ -9,9 +9,9 @@ import androidx.compose.ui.unit.dp
 import com.example.videoqongiroq.data.CallState
 import com.example.videoqongiroq.data.User
 import com.example.videoqongiroq.ui.components.PermissionHandler
-import com.example.videoqongiroq.ui.screens.NexusCallScreen
-import com.example.videoqongiroq.ui.screens.NexusLoginScreen
-import com.example.videoqongiroq.ui.screens.NexusUsersScreen
+import com.example.videoqongiroq.ui.screens.CyberLumenCallScreen
+import com.example.videoqongiroq.ui.screens.CyberLumenLoginScreen
+import com.example.videoqongiroq.ui.screens.CyberLumenUsersScreen
 import com.example.videoqongiroq.utils.AutoUpdateManager
 import com.example.videoqongiroq.webrtc.NexusCallEngine
 import com.example.videoqongiroq.webrtc.SignalingClient
@@ -103,7 +103,7 @@ fun VideoQongiroqApp() {
             )
         } else {
             if (currentUser == null) {
-                NexusLoginScreen(
+                CyberLumenLoginScreen(
                     onLoginSuccess = { phone, name ->
                         signalingClient.login(context, phone, name)
                     }
@@ -111,7 +111,7 @@ fun VideoQongiroqApp() {
             } else {
                 when (callState) {
                     CallState.Idle -> {
-                        NexusUsersScreen(
+                        CyberLumenUsersScreen(
                             currentUser = currentUser,
                             onlineUsers = onlineUsers,
                             serverUrl = serverUrl,
@@ -138,7 +138,7 @@ fun VideoQongiroqApp() {
                         )
                     }
                     else -> {
-                        NexusCallScreen(
+                        CyberLumenCallScreen(
                             currentUser = currentUser,
                             callState = callState,
                             callEngine = nexusCallEngine,
