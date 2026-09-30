@@ -19,9 +19,9 @@ app.add_middleware(
 # Store registered users: phone -> {"name": name, "status": "AVAILABLE" / "OFFLINE", "websocket": ws / None}
 registered_users: Dict[str, dict] = {}
 
-# Current latest app version configuration for In-App Auto-Update
-LATEST_VERSION_CODE = 1
-LATEST_VERSION_NAME = "1.0"
+# Current latest app version configuration for In-App Auto-Update over the internet
+LATEST_VERSION_CODE = 2
+LATEST_VERSION_NAME = "1.1"
 
 async def broadcast_users():
     users_list = [
