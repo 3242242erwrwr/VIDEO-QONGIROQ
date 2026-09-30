@@ -79,11 +79,12 @@ class AgoraVideoManager(private val context: Context) {
 
     fun setupLocalVideo(container: FrameLayout) {
         try {
-            container.removeAllViews()
-            val surfaceView = SurfaceView(context)
-            surfaceView.setZOrderMediaOverlay(true)
-            container.addView(surfaceView)
-            rtcEngine?.setupLocalVideo(VideoCanvas(surfaceView, VideoCanvas.RENDER_MODE_HIDDEN, 0))
+            if (container.childCount == 0) {
+                val surfaceView = SurfaceView(context)
+                surfaceView.setZOrderMediaOverlay(true)
+                container.addView(surfaceView)
+                rtcEngine?.setupLocalVideo(VideoCanvas(surfaceView, VideoCanvas.RENDER_MODE_HIDDEN, 0))
+            }
             rtcEngine?.startPreview()
         } catch (e: Exception) {
             Log.e(TAG, "Error setting up local video", e)
@@ -92,10 +93,11 @@ class AgoraVideoManager(private val context: Context) {
 
     fun setupRemoteVideo(container: FrameLayout, uid: Int) {
         try {
-            container.removeAllViews()
-            val surfaceView = SurfaceView(context)
-            container.addView(surfaceView)
-            rtcEngine?.setupRemoteVideo(VideoCanvas(surfaceView, VideoCanvas.RENDER_MODE_HIDDEN, uid))
+            if (container.childCount == 0) {
+                val surfaceView = SurfaceView(context)
+                container.addView(surfaceView)
+                rtcEngine?.setupRemoteVideo(VideoCanvas(surfaceView, VideoCanvas.RENDER_MODE_HIDDEN, uid))
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Error setting up remote video", e)
         }

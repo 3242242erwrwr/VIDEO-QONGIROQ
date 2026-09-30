@@ -21,12 +21,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.example.videoqongiroq.data.CallState
+import com.example.videoqongiroq.data.User
 import com.example.videoqongiroq.webrtc.AgoraVideoManager
 import kotlinx.coroutines.delay
 import java.util.Locale
 
 @Composable
 fun CallScreen(
+    currentUser: User?,
     callState: CallState,
     agoraVideoManager: AgoraVideoManager?,
     onAcceptCall: () -> Unit,
@@ -57,6 +59,7 @@ fun CallScreen(
             }
             is CallState.InCall -> {
                 ActiveCallContent(
+                    currentUser = currentUser,
                     callState = callState,
                     agoraVideoManager = agoraVideoManager,
                     onEndCall = onEndCall,
@@ -256,6 +259,7 @@ fun OutgoingCallContent(
 
 @Composable
 fun ActiveCallContent(
+    currentUser: User?,
     callState: CallState.InCall,
     agoraVideoManager: AgoraVideoManager?,
     onEndCall: () -> Unit,
@@ -266,14 +270,14 @@ fun ActiveCallContent(
     var callSeconds by remember { mutableStateOf(0) }
     var remoteUid by remember { mutableStateOf(agoraVideoManager?.remoteUid) }
 
-    val channelName = remember(callState.peerUser.phone) {
-        val p1 = callState.peerUser.phone.filter { it.isDigit() }
-        val p2 = "998000000000"
+    val channelName = remember(currentUser?.phone, callState.peerUser.phone) {
+        val p1 = (currentUser?.phone ?: "998000000000").filter { it.isDigit() }
+        val p2 = callState.peerUser.phone.filter { it.isDigit() }
         val sorted = listOf(p1, p2).sorted()
-        "channel_${sorted[0]}_${sorted[1]}"
+        "qongiroq_${sorted[0]}_${sorted[1]}"
     }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(channelName) {
         agoraVideoManager?.onRemoteUserJoined = { uid ->
             remoteUid = uid
         }
@@ -288,7 +292,7 @@ fun ActiveCallContent(
         }
     }
 
-    DisposableEffect(Unit) {
+    DisposableEffect(channelName) {
         onDispose {
             agoraVideoManager?.leaveChannel()
         }
@@ -340,6 +344,9 @@ fun ActiveCallContent(
                         FrameLayout(ctx).apply {
                             agoraVideoManager.setupLocalVideo(this)
                         }
+                    },
+                    update = { frameLayout ->
+                        agoraVideoManager.setupLocalVideo(frameLayout)
                     },
                     modifier = Modifier.fillMaxSize()
                 )

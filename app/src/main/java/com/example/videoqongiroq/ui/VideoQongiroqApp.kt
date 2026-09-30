@@ -90,6 +90,7 @@ fun VideoQongiroqApp() {
                     }
                     else -> {
                         CallScreen(
+                            currentUser = currentUser,
                             callState = callState,
                             agoraVideoManager = agoraVideoManager,
                             onAcceptCall = {
@@ -124,7 +125,7 @@ fun VideoQongiroqApp() {
                                     val state = callState as CallState.InCall
                                     signalingClient.updateCallControls(
                                         isMuted = state.isMuted,
-                                        isCameraOff = isCameraOff,
+                                        isCameraOff = state.isCameraOff,
                                         isFrontCamera = state.isFrontCamera
                                     )
                                 }
