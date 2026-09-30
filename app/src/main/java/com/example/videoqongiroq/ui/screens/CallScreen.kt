@@ -290,6 +290,9 @@ fun ActiveCallContent(
                         webRTCManager.initRemoteSurfaceView(this)
                     }
                 },
+                update = { view ->
+                    webRTCManager.initRemoteSurfaceView(view)
+                },
                 modifier = Modifier.fillMaxSize()
             )
         } else {
@@ -319,8 +322,12 @@ fun ActiveCallContent(
                 AndroidView(
                     factory = { ctx ->
                         SurfaceViewRenderer(ctx).apply {
+                            setZOrderMediaOverlay(true)
                             webRTCManager.initLocalSurfaceView(this)
                         }
+                    },
+                    update = { view ->
+                        webRTCManager.initLocalSurfaceView(view)
                     },
                     modifier = Modifier.fillMaxSize()
                 )

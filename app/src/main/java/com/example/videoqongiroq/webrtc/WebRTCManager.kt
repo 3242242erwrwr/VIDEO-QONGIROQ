@@ -1,6 +1,7 @@
 package com.example.videoqongiroq.webrtc
 
 import android.content.Context
+import android.media.AudioManager
 import android.util.Log
 import org.webrtc.*
 import org.webrtc.PeerConnection.*
@@ -9,6 +10,8 @@ class WebRTCManager(private val context: Context) {
 
     private val eglBase: EglBase = EglBase.create()
     val eglBaseContext: EglBase.Context get() = eglBase.eglBaseContext
+
+    private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
 
     private var peerConnectionFactory: PeerConnectionFactory? = null
     private var peerConnection: PeerConnection? = null
@@ -19,8 +22,13 @@ class WebRTCManager(private val context: Context) {
     private var audioSource: AudioSource? = null
     private var localAudioTrack: AudioTrack? = null
 
+    private var remoteVideoTrack: VideoTrack? = null
+
     private var localSurfaceView: SurfaceViewRenderer? = null
     private var remoteSurfaceView: SurfaceViewRenderer? = null
+
+    private val pendingIceCandidates = mutableListOf<IceCandidate>()
+    private var isRemoteDescriptionSet = false
 
     var onIceCandidateGenerated: ((IceCandidate) -> Unit)? = null
     var onRemoteStreamAdded: ((MediaStream) -> Unit)? = null
@@ -55,25 +63,69 @@ class WebRTCManager(private val context: Context) {
             .createPeerConnectionFactory()
     }
 
+    fun setupAudioForCall() {
+        try {
+            audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
+            @Suppress("DEPRECATION")
+            audioManager.isSpeakerphoneOn = true
+            Log.d(TAG, "Audio configured for video call: Speakerphone ON, Mode IN_COMMUNICATION")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error setting up AudioManager", e)
+        }
+    }
+
+    fun resetAudio() {
+        try {
+            audioManager.mode = AudioManager.MODE_NORMAL
+            @Suppress("DEPRECATION")
+            audioManager.isSpeakerphoneOn = false
+        } catch (e: Exception) {
+            Log.e(TAG, "Error resetting AudioManager", e)
+        }
+    }
+
     fun initLocalSurfaceView(renderer: SurfaceViewRenderer) {
         localSurfaceView = renderer
-        localSurfaceView?.init(eglBase.eglBaseContext, null)
-        localSurfaceView?.setEnableHardwareScaler(true)
-        localSurfaceView?.setMirror(true)
+        try {
+            localSurfaceView?.init(eglBase.eglBaseContext, null)
+            localSurfaceView?.setEnableHardwareScaler(true)
+            localSurfaceView?.setMirror(true)
+            localSurfaceView?.setZOrderMediaOverlay(true)
+
+            localVideoTrack?.addSink(localSurfaceView)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error initializing local SurfaceView", e)
+        }
     }
 
     fun initRemoteSurfaceView(renderer: SurfaceViewRenderer) {
         remoteSurfaceView = renderer
-        remoteSurfaceView?.init(eglBase.eglBaseContext, null)
-        remoteSurfaceView?.setEnableHardwareScaler(true)
-        remoteSurfaceView?.setMirror(false)
+        try {
+            remoteSurfaceView?.init(eglBase.eglBaseContext, null)
+            remoteSurfaceView?.setEnableHardwareScaler(true)
+            remoteSurfaceView?.setMirror(false)
+
+            remoteVideoTrack?.addSink(remoteSurfaceView)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error initializing remote SurfaceView", e)
+        }
     }
 
     fun startLocalVideo() {
         if (peerConnectionFactory == null) return
+        if (localAudioTrack != null && localVideoTrack != null) return
+
+        setupAudioForCall()
 
         // Create Audio track
-        audioSource = peerConnectionFactory?.createAudioSource(MediaConstraints())
+        val audioConstraints = MediaConstraints().apply {
+            mandatory.add(MediaConstraints.KeyValuePair("googEchoCancellation", "true"))
+            mandatory.add(MediaConstraints.KeyValuePair("googAutoGainControl", "true"))
+            mandatory.add(MediaConstraints.KeyValuePair("googHighpassFilter", "true"))
+            mandatory.add(MediaConstraints.KeyValuePair("googNoiseSuppression", "true"))
+        }
+
+        audioSource = peerConnectionFactory?.createAudioSource(audioConstraints)
         localAudioTrack = peerConnectionFactory?.createAudioTrack(LOCAL_AUDIO_TRACK_ID, audioSource)
         localAudioTrack?.setEnabled(true)
 
@@ -99,7 +151,6 @@ class WebRTCManager(private val context: Context) {
         val enumerator = Camera2Enumerator(context)
         val deviceNames = enumerator.deviceNames
 
-        // Try front camera first
         for (deviceName in deviceNames) {
             if (enumerator.isFrontFacing(deviceName)) {
                 isFrontCamera = true
@@ -108,7 +159,6 @@ class WebRTCManager(private val context: Context) {
             }
         }
 
-        // Fallback to back camera
         for (deviceName in deviceNames) {
             if (enumerator.isBackFacing(deviceName)) {
                 isFrontCamera = false
@@ -121,10 +171,18 @@ class WebRTCManager(private val context: Context) {
     }
 
     fun createPeerConnection() {
+        if (peerConnection != null) return
+
+        // Always ensure local tracks exist before creating PeerConnection
+        startLocalVideo()
+
         val iceServers = listOf(
             IceServer.builder("stun:stun.l.google.com:19302").createIceServer(),
             IceServer.builder("stun:stun1.l.google.com:19302").createIceServer(),
-            IceServer.builder("stun:stun2.l.google.com:19302").createIceServer()
+            IceServer.builder("stun:stun2.l.google.com:19302").createIceServer(),
+            IceServer.builder("stun:stun3.l.google.com:19302").createIceServer(),
+            IceServer.builder("stun:stun4.l.google.com:19302").createIceServer(),
+            IceServer.builder("stun:stun.services.mozilla.com").createIceServer()
         )
 
         val rtcConfig = RTCConfiguration(iceServers).apply {
@@ -154,6 +212,7 @@ class WebRTCManager(private val context: Context) {
                     onRemoteStreamAdded?.invoke(it)
                     if (it.videoTracks.isNotEmpty()) {
                         val track = it.videoTracks[0]
+                        remoteVideoTrack = track
                         remoteSurfaceView?.let { view ->
                             track.addSink(view)
                         }
@@ -168,6 +227,7 @@ class WebRTCManager(private val context: Context) {
             override fun onAddTrack(receiver: RtpReceiver?, streams: Array<out MediaStream>?) {
                 receiver?.track()?.let { track ->
                     if (track is VideoTrack) {
+                        remoteVideoTrack = track
                         onRemoteVideoTrackReceived?.invoke(track)
                         remoteSurfaceView?.let { view ->
                             track.addSink(view)
@@ -179,6 +239,7 @@ class WebRTCManager(private val context: Context) {
             override fun onTrack(transceiver: RtpTransceiver?) {
                 val track = transceiver?.receiver?.track()
                 if (track is VideoTrack) {
+                    remoteVideoTrack = track
                     onRemoteVideoTrackReceived?.invoke(track)
                     remoteSurfaceView?.let { view ->
                         track.addSink(view)
@@ -234,11 +295,27 @@ class WebRTCManager(private val context: Context) {
     }
 
     fun setRemoteDescription(sdp: SessionDescription) {
-        peerConnection?.setRemoteDescription(SdpObserverAdapter(), sdp)
+        peerConnection?.setRemoteDescription(object : SdpObserverAdapter() {
+            override fun onSetSuccess() {
+                isRemoteDescriptionSet = true
+                synchronized(pendingIceCandidates) {
+                    for (candidate in pendingIceCandidates) {
+                        peerConnection?.addIceCandidate(candidate)
+                    }
+                    pendingIceCandidates.clear()
+                }
+            }
+        }, sdp)
     }
 
     fun addIceCandidate(candidate: IceCandidate) {
-        peerConnection?.addIceCandidate(candidate)
+        if (isRemoteDescriptionSet) {
+            peerConnection?.addIceCandidate(candidate)
+        } else {
+            synchronized(pendingIceCandidates) {
+                pendingIceCandidates.add(candidate)
+            }
+        }
     }
 
     fun toggleMute(isMuted: Boolean) {
@@ -263,6 +340,12 @@ class WebRTCManager(private val context: Context) {
     }
 
     fun close() {
+        resetAudio()
+        isRemoteDescriptionSet = false
+        synchronized(pendingIceCandidates) {
+            pendingIceCandidates.clear()
+        }
+
         try {
             videoCapturer?.stopCapture()
         } catch (e: Exception) {
@@ -282,6 +365,7 @@ class WebRTCManager(private val context: Context) {
 
         localSurfaceView?.release()
         remoteSurfaceView?.release()
+        remoteVideoTrack = null
     }
 
     open class SdpObserverAdapter : SdpObserver {
