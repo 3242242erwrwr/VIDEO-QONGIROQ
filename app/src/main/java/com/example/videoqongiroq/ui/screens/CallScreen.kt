@@ -1,5 +1,6 @@
 package com.example.videoqongiroq.ui.screens
 
+import android.widget.FrameLayout
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -20,15 +21,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.example.videoqongiroq.data.CallState
-import com.example.videoqongiroq.webrtc.WebRTCManager
+import com.example.videoqongiroq.webrtc.AgoraVideoManager
 import kotlinx.coroutines.delay
-import org.webrtc.SurfaceViewRenderer
 import java.util.Locale
 
 @Composable
 fun CallScreen(
     callState: CallState,
-    webRTCManager: WebRTCManager?,
+    agoraVideoManager: AgoraVideoManager?,
     onAcceptCall: () -> Unit,
     onRejectCall: () -> Unit,
     onEndCall: () -> Unit,
@@ -58,7 +58,7 @@ fun CallScreen(
             is CallState.InCall -> {
                 ActiveCallContent(
                     callState = callState,
-                    webRTCManager = webRTCManager,
+                    agoraVideoManager = agoraVideoManager,
                     onEndCall = onEndCall,
                     onToggleMute = onToggleMute,
                     onToggleCamera = onToggleCamera,
@@ -257,17 +257,30 @@ fun OutgoingCallContent(
 @Composable
 fun ActiveCallContent(
     callState: CallState.InCall,
-    webRTCManager: WebRTCManager?,
+    agoraVideoManager: AgoraVideoManager?,
     onEndCall: () -> Unit,
     onToggleMute: (Boolean) -> Unit,
     onToggleCamera: (Boolean) -> Unit,
     onSwitchCamera: () -> Unit
 ) {
     var callSeconds by remember { mutableStateOf(0) }
+    var remoteUid by remember { mutableStateOf(agoraVideoManager?.remoteUid) }
+
+    val channelName = remember(callState.peerUser.phone) {
+        val p1 = callState.peerUser.phone.filter { it.isDigit() }
+        val p2 = "998000000000"
+        val sorted = listOf(p1, p2).sorted()
+        "channel_${sorted[0]}_${sorted[1]}"
+    }
 
     LaunchedEffect(Unit) {
-        webRTCManager?.startLocalVideo()
-        webRTCManager?.createPeerConnection()
+        agoraVideoManager?.onRemoteUserJoined = { uid ->
+            remoteUid = uid
+        }
+        agoraVideoManager?.onRemoteUserOffline = { _ ->
+            remoteUid = null
+        }
+        agoraVideoManager?.joinChannel(channelName)
 
         while (true) {
             delay(1000)
@@ -277,21 +290,22 @@ fun ActiveCallContent(
 
     DisposableEffect(Unit) {
         onDispose {
-            webRTCManager?.close()
+            agoraVideoManager?.leaveChannel()
         }
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        // Remote Video (Full Screen)
-        if (webRTCManager != null) {
+        // Remote Video View (Full Screen)
+        val activeUid = remoteUid
+        if (agoraVideoManager != null && activeUid != null) {
             AndroidView(
                 factory = { ctx ->
-                    SurfaceViewRenderer(ctx).apply {
-                        webRTCManager.initRemoteSurfaceView(this)
+                    FrameLayout(ctx).apply {
+                        agoraVideoManager.setupRemoteVideo(this, activeUid)
                     }
                 },
-                update = { view ->
-                    webRTCManager.initRemoteSurfaceView(view)
+                update = { frameLayout ->
+                    agoraVideoManager.setupRemoteVideo(frameLayout, activeUid)
                 },
                 modifier = Modifier.fillMaxSize()
             )
@@ -303,14 +317,16 @@ fun ActiveCallContent(
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = "Video tayyorlanmoqda...",
-                    color = Color.White
+                    text = "Abonentga ulanilmoqda...",
+                    color = Color.White,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold
                 )
             }
         }
 
-        // Local Video (PIP Overlay - Top Right)
-        if (webRTCManager != null && !callState.isCameraOff) {
+        // Local Video View (PIP Overlay - Top Right)
+        if (agoraVideoManager != null && !callState.isCameraOff) {
             Box(
                 modifier = Modifier
                     .padding(top = 48.dp, end = 16.dp)
@@ -321,13 +337,9 @@ fun ActiveCallContent(
             ) {
                 AndroidView(
                     factory = { ctx ->
-                        SurfaceViewRenderer(ctx).apply {
-                            setZOrderMediaOverlay(true)
-                            webRTCManager.initLocalSurfaceView(this)
+                        FrameLayout(ctx).apply {
+                            agoraVideoManager.setupLocalVideo(this)
                         }
-                    },
-                    update = { view ->
-                        webRTCManager.initLocalSurfaceView(view)
                     },
                     modifier = Modifier.fillMaxSize()
                 )

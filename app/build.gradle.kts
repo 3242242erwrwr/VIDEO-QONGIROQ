@@ -42,6 +42,7 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose")
     implementation("io.getstream:stream-webrtc-android:1.3.10")
+    implementation("io.agora.rtc:full-sdk:4.6.4")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.graphics)
