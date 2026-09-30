@@ -187,13 +187,14 @@ class WebRTCManager(private val context: Context) {
 
         startLocalVideo()
 
-        // STUN and TURN Servers for NAT Traversal (Cellular 4G/5G / Home Wi-Fi)
+        // STUN and TURN Servers specifically optimized for Cellular 4G/5G Networks & CGNAT
         val iceServers = listOf(
             IceServer.builder("stun:stun.l.google.com:19302").createIceServer(),
             IceServer.builder("stun:stun1.l.google.com:19302").createIceServer(),
             IceServer.builder("stun:stun2.l.google.com:19302").createIceServer(),
             IceServer.builder("stun:stun3.l.google.com:19302").createIceServer(),
             IceServer.builder("stun:stun4.l.google.com:19302").createIceServer(),
+            IceServer.builder("stun:global.stun.twilio.com:3478").createIceServer(),
             IceServer.builder("stun:openrelay.metered.ca:80").createIceServer(),
             IceServer.builder("turn:openrelay.metered.ca:80")
                 .setUsername("openrelayproject")
@@ -212,6 +213,12 @@ class WebRTCManager(private val context: Context) {
         val rtcConfig = RTCConfiguration(iceServers).apply {
             sdpSemantics = SdpSemantics.UNIFIED_PLAN
             continualGatheringPolicy = PeerConnection.ContinualGatheringPolicy.GATHER_CONTINUALLY
+            candidateNetworkPolicy = PeerConnection.CandidateNetworkPolicy.ALL
+            iceTransportsType = PeerConnection.IceTransportsType.ALL
+            bundlePolicy = PeerConnection.BundlePolicy.MAXBUNDLE
+            rtcpMuxPolicy = PeerConnection.RtcpMuxPolicy.REQUIRE
+            tcpCandidatePolicy = PeerConnection.TcpCandidatePolicy.ENABLED
+            iceCandidatePoolSize = 10
         }
 
         val observer = object : PeerConnection.Observer {
