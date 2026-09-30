@@ -44,9 +44,10 @@ fun VideoQongiroqApp() {
         // When offer is received from peer
         signalingClient.onOfferReceived = { senderPhone, offerSdp ->
             webRTCManager.createPeerConnection()
-            webRTCManager.setRemoteDescription(offerSdp)
-            webRTCManager.createAnswer { answerSdp ->
-                signalingClient.sendAnswer(senderPhone, answerSdp)
+            webRTCManager.setRemoteDescription(offerSdp) {
+                webRTCManager.createAnswer { answerSdp ->
+                    signalingClient.sendAnswer(senderPhone, answerSdp)
+                }
             }
         }
 

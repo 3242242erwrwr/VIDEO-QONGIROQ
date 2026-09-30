@@ -2,6 +2,8 @@ package com.example.videoqongiroq.webrtc
 
 import android.content.Context
 import android.media.AudioManager
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import org.webrtc.*
 import org.webrtc.PeerConnection.*
@@ -11,6 +13,7 @@ class WebRTCManager(private val context: Context) {
     private val eglBase: EglBase = EglBase.create()
     val eglBaseContext: EglBase.Context get() = eglBase.eglBaseContext
 
+    private val mainHandler = Handler(Looper.getMainLooper())
     private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
 
     private var peerConnectionFactory: PeerConnectionFactory? = null
@@ -68,7 +71,8 @@ class WebRTCManager(private val context: Context) {
             audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
             @Suppress("DEPRECATION")
             audioManager.isSpeakerphoneOn = true
-            Log.d(TAG, "Audio configured for video call: Speakerphone ON, Mode IN_COMMUNICATION")
+            audioManager.isMicrophoneMute = false
+            Log.d(TAG, "Audio configured: Speakerphone ON, Mode IN_COMMUNICATION")
         } catch (e: Exception) {
             Log.e(TAG, "Error setting up AudioManager", e)
         }
@@ -105,7 +109,15 @@ class WebRTCManager(private val context: Context) {
             remoteSurfaceView?.setEnableHardwareScaler(true)
             remoteSurfaceView?.setMirror(false)
 
-            remoteVideoTrack?.addSink(remoteSurfaceView)
+            remoteVideoTrack?.let { track ->
+                mainHandler.post {
+                    try {
+                        track.addSink(remoteSurfaceView)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error adding sink to remoteSurfaceView", e)
+                    }
+                }
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Error initializing remote SurfaceView", e)
         }
@@ -173,16 +185,28 @@ class WebRTCManager(private val context: Context) {
     fun createPeerConnection() {
         if (peerConnection != null) return
 
-        // Always ensure local tracks exist before creating PeerConnection
         startLocalVideo()
 
+        // STUN and TURN Servers for NAT Traversal (Cellular 4G/5G / Home Wi-Fi)
         val iceServers = listOf(
             IceServer.builder("stun:stun.l.google.com:19302").createIceServer(),
             IceServer.builder("stun:stun1.l.google.com:19302").createIceServer(),
             IceServer.builder("stun:stun2.l.google.com:19302").createIceServer(),
             IceServer.builder("stun:stun3.l.google.com:19302").createIceServer(),
             IceServer.builder("stun:stun4.l.google.com:19302").createIceServer(),
-            IceServer.builder("stun:stun.services.mozilla.com").createIceServer()
+            IceServer.builder("stun:openrelay.metered.ca:80").createIceServer(),
+            IceServer.builder("turn:openrelay.metered.ca:80")
+                .setUsername("openrelayproject")
+                .setPassword("openrelayproject")
+                .createIceServer(),
+            IceServer.builder("turn:openrelay.metered.ca:443")
+                .setUsername("openrelayproject")
+                .setPassword("openrelayproject")
+                .createIceServer(),
+            IceServer.builder("turn:openrelay.metered.ca:443?transport=tcp")
+                .setUsername("openrelayproject")
+                .setPassword("openrelayproject")
+                .createIceServer()
         )
 
         val rtcConfig = RTCConfiguration(iceServers).apply {
@@ -191,15 +215,22 @@ class WebRTCManager(private val context: Context) {
         }
 
         val observer = object : PeerConnection.Observer {
-            override fun onSignalingChange(state: SignalingState?) {}
+            override fun onSignalingChange(state: SignalingState?) {
+                Log.d(TAG, "onSignalingChange: $state")
+            }
+
             override fun onIceConnectionChange(state: IceConnectionState?) {
                 Log.d(TAG, "onIceConnectionChange: $state")
             }
+
             override fun onIceConnectionReceivingChange(receiving: Boolean) {}
-            override fun onIceGatheringChange(state: IceGatheringState?) {}
+            override fun onIceGatheringChange(state: IceGatheringState?) {
+                Log.d(TAG, "onIceGatheringChange: $state")
+            }
 
             override fun onIceCandidate(candidate: IceCandidate?) {
                 candidate?.let {
+                    Log.d(TAG, "Local IceCandidate generated: ${it.sdpMid}")
                     onIceCandidateGenerated?.invoke(it)
                 }
             }
@@ -211,11 +242,7 @@ class WebRTCManager(private val context: Context) {
                 stream?.let {
                     onRemoteStreamAdded?.invoke(it)
                     if (it.videoTracks.isNotEmpty()) {
-                        val track = it.videoTracks[0]
-                        remoteVideoTrack = track
-                        remoteSurfaceView?.let { view ->
-                            track.addSink(view)
-                        }
+                        attachRemoteVideoTrack(it.videoTracks[0])
                     }
                 }
             }
@@ -227,11 +254,8 @@ class WebRTCManager(private val context: Context) {
             override fun onAddTrack(receiver: RtpReceiver?, streams: Array<out MediaStream>?) {
                 receiver?.track()?.let { track ->
                     if (track is VideoTrack) {
-                        remoteVideoTrack = track
-                        onRemoteVideoTrackReceived?.invoke(track)
-                        remoteSurfaceView?.let { view ->
-                            track.addSink(view)
-                        }
+                        Log.d(TAG, "onAddTrack VideoTrack received")
+                        attachRemoteVideoTrack(track)
                     }
                 }
             }
@@ -239,11 +263,8 @@ class WebRTCManager(private val context: Context) {
             override fun onTrack(transceiver: RtpTransceiver?) {
                 val track = transceiver?.receiver?.track()
                 if (track is VideoTrack) {
-                    remoteVideoTrack = track
-                    onRemoteVideoTrackReceived?.invoke(track)
-                    remoteSurfaceView?.let { view ->
-                        track.addSink(view)
-                    }
+                    Log.d(TAG, "onTrack VideoTrack received")
+                    attachRemoteVideoTrack(track)
                 }
             }
         }
@@ -259,6 +280,21 @@ class WebRTCManager(private val context: Context) {
         localVideoTrack?.let {
             mediaStream?.addTrack(it)
             peerConnection?.addTrack(it, listOf(LOCAL_STREAM_ID))
+        }
+    }
+
+    private fun attachRemoteVideoTrack(track: VideoTrack) {
+        remoteVideoTrack = track
+        onRemoteVideoTrackReceived?.invoke(track)
+        mainHandler.post {
+            remoteSurfaceView?.let { view ->
+                try {
+                    track.addSink(view)
+                    Log.d(TAG, "Remote video track successfully attached to view!")
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error attaching remote track to view", e)
+                }
+            }
         }
     }
 
@@ -294,9 +330,10 @@ class WebRTCManager(private val context: Context) {
         }, constraints)
     }
 
-    fun setRemoteDescription(sdp: SessionDescription) {
+    fun setRemoteDescription(sdp: SessionDescription, onSuccess: (() -> Unit)? = null) {
         peerConnection?.setRemoteDescription(object : SdpObserverAdapter() {
             override fun onSetSuccess() {
+                Log.d(TAG, "setRemoteDescription SUCCESS")
                 isRemoteDescriptionSet = true
                 synchronized(pendingIceCandidates) {
                     for (candidate in pendingIceCandidates) {
@@ -304,6 +341,11 @@ class WebRTCManager(private val context: Context) {
                     }
                     pendingIceCandidates.clear()
                 }
+                onSuccess?.invoke()
+            }
+
+            override fun onSetFailure(reason: String?) {
+                Log.e(TAG, "setRemoteDescription FAILURE: $reason")
             }
         }, sdp)
     }
