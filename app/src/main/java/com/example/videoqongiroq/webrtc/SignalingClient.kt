@@ -28,7 +28,6 @@ class SignalingClient {
     private val _callState = MutableStateFlow<CallState>(CallState.Idle)
     val callState: StateFlow<CallState> = _callState.asStateFlow()
 
-    // Server URL - user can change this in app settings / dialog
     private val _serverUrl = MutableStateFlow("wss://video-qongiroq.onrender.com/ws/")
     val serverUrl: StateFlow<String> = _serverUrl.asStateFlow()
 
@@ -48,7 +47,6 @@ class SignalingClient {
         val trimmed = newUrl.trim()
         if (trimmed.isNotEmpty()) {
             _serverUrl.value = if (trimmed.endsWith("/")) trimmed else "$trimmed/"
-            // Reconnect if user is logged in
             val user = _currentUser.value
             if (user != null) {
                 login(user.phone, user.name)
@@ -99,15 +97,20 @@ class SignalingClient {
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                 Log.e(TAG, "WebSocket Failure: ${t.message}", t)
-                // Retry connection after 3 seconds
                 scope.launch {
-                    delay(3000)
+                    delay(2000)
                     _currentUser.value?.let { connectWebSocket(it) }
                 }
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
                 Log.d(TAG, "WebSocket Closed: $reason")
+                if (code != 1000) {
+                    scope.launch {
+                        delay(2000)
+                        _currentUser.value?.let { connectWebSocket(it) }
+                    }
+                }
             }
         })
     }
@@ -210,6 +213,10 @@ class SignalingClient {
             put("receiverPhone", callerUser.phone)
         }
         sendJson(msg)
+    }
+
+    fun transitionToInCall(peerUser: User, isVideo: Boolean = true) {
+        _callState.value = CallState.InCall(peerUser = peerUser, isVideo = isVideo)
     }
 
     fun rejectIncomingCall(callerUser: User) {

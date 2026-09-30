@@ -32,8 +32,9 @@ fun VideoQongiroqApp() {
     LaunchedEffect(Unit) {
         // When peer accepts our call, create WebRTC offer
         signalingClient.onCallAcceptedReceived = { targetPhone ->
-            val peerUser = User(phone = targetPhone, name = targetPhone)
-            signalingClient.acceptIncomingCall(peerUser, isVideo = true)
+            val peerUser = signalingClient.onlineUsers.value.find { it.phone == targetPhone }
+                ?: User(phone = targetPhone, name = targetPhone)
+            signalingClient.transitionToInCall(peerUser, isVideo = true)
 
             webRTCManager.createPeerConnection()
             webRTCManager.createOffer { sdp ->
