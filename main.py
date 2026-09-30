@@ -49,6 +49,15 @@ async def get_status():
         "total_users_count": len(registered_users)
     }
 
+@app.get("/call.html")
+async def get_call_page():
+    path = "call.html"
+    if not os.path.exists(path):
+        path = os.path.join("server", "call.html")
+    if os.path.exists(path):
+        return FileResponse(path=path, media_type="text/html")
+    return {"error": "call.html not found"}
+
 @app.get("/version")
 async def get_version():
     return {

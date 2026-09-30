@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Video Qongiroq</title>
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { background-color: #000; color: #fff; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; overflow: hidden; width: 100vw; height: 100vh; }
+        #remoteVideo { width: 100vw; height: 100vh; object-fit: cover; position: absolute; top: 0; left: 0; z-index: 1; }
+        #localVideo { width: 110px; height: 160px; object-fit: cover; position: absolute; top: 48px; right: 16px; border-radius: 16px; border: 2px solid rgba(255,255,255,0.8); z-index: 10; transform: scaleX(-1); background: #222; }
+        #statusBadge { position: absolute; top: 48px; left: 16px; background: rgba(0, 0, 0, 0.65); padding: 8px 14px; border-radius: 12px; z-index: 20; font-size: 13px; font-weight: bold; color: #4CAF50; backdrop-filter: blur(4px); display: flex; align-items: center; gap: 8px; }
+        .dot { width: 8px; height: 8px; background-color: #4CAF50; border-radius: 50%; display: inline-block; }
+    </style>
+</head>
+<body>
+    <div id="statusBadge"><span class="dot"></span> <span id="statusText">Abonentga ulanilmoqda...</span></div>
+    <video id="remoteVideo" autoplay playsinline></video>
+    <video id="localVideo" autoplay playsinline muted></video>
+
+    <script>
+        const urlParams = new URLSearchParams(window.location.search);
+        const roomId = urlParams.get('room') || 'default_room';
+        const isCaller = urlParams.get('caller') === 'true';
+
+        const myId = isCaller ? roomId + '_caller' : roomId + '_callee';
+        const peerId = isCaller ? roomId + '_callee' : roomId + '_caller';
+
+        const remoteVideo = document.getElementById('remoteVideo');
+        const localVideo = document.getElementById('localVideo');
+        const statusText = document.getElementById('statusText');
+
+        let localStream = null;
+
+        const peer = new Peer(myId, {
+            host: '0.peerjs.com',
+            port: 443,
+            secure: true,
+            config: {
+                iceServers: [
+                    { urls: 'stun:stun.l.google.com:19302' },
+                    { urls: 'stun:stun1.l.google.com:19302' },
+                    { urls: 'stun:openrelay.metered.ca:80' },
+                    { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
+                    { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' }
+                ]
+            }
+        });
+
+        navigator.mediaDevices.getUserMedia({
+            video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } },
+            audio: true
+        })
+        .then(stream => {
+            localStream = stream;
+            localVideo.srcObject = stream;
+
+            peer.on('call', call => {
+                call.answer(localStream);
+                call.on('stream', remoteStream => {
+                    remoteVideo.srcObject = remoteStream;
+                    statusText.innerText = 'Abonent ulangan (Onlayn)';
+                });
+            });
+
+            if (isCaller) {
+                let attempts = 0;
+                function tryCall() {
+                    attempts++;
+                    const call = peer.call(peerId, localStream);
+                    if (call) {
+                        call.on('stream', remoteStream => {
+                            remoteVideo.srcObject = remoteStream;
+                            statusText.innerText = 'Abonent ulangan (Onlayn)';
+                        });
+                    }
+                    if (attempts < 10 && statusText.innerText.includes('ulanilmoqda')) {
+                        setTimeout(tryCall, 1500);
+                    }
+                }
+                setTimeout(tryCall, 1000);
+            }
+        })
+        .catch(err => {
+            statusText.innerText = 'Kamera ruxsati xatosi: ' + err.message;
+        });
+
+        peer.on('error', err => {
+            console.error('PeerJS error:', err);
+        });
+    </script>
+</body>
+</html>

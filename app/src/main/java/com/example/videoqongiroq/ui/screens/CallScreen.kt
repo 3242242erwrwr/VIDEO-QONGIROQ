@@ -274,6 +274,8 @@ fun ActiveCallContent(
         if (callState.roomId.isNotBlank()) callState.roomId else "room_${System.currentTimeMillis()}"
     }
 
+    val isCaller = callState.isCaller
+
     // Configure Audio Manager for Call Mode and Speakerphone
     DisposableEffect(Unit) {
         val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
@@ -307,7 +309,7 @@ fun ActiveCallContent(
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        // High-Speed WebRTC Global Call Engine
+        // High-Speed PeerCloud Direct WebRTC Video & Audio Engine
         AndroidView(
             factory = { ctx ->
                 WebView(ctx).apply {
@@ -320,7 +322,6 @@ fun ActiveCallContent(
                     settings.mediaPlaybackRequiresUserGesture = false
                     settings.allowFileAccess = true
                     settings.allowContentAccess = true
-                    settings.userAgentString = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
                     webChromeClient = object : WebChromeClient() {
                         override fun onPermissionRequest(request: PermissionRequest?) {
@@ -337,7 +338,7 @@ fun ActiveCallContent(
                         }
                     }
 
-                    val callUrl = "https://meet.jit.si/$roomName#config.prejoinPageEnabled=false&config.startWithAudioMuted=false&config.startWithVideoMuted=false&config.requireDisplayName=false&config.enableWelcomePage=false"
+                    val callUrl = "https://video-qongiroq.onrender.com/call.html?room=$roomName&caller=$isCaller"
                     loadUrl(callUrl)
                 }
             },
